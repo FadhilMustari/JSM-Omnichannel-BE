@@ -24,10 +24,5 @@ class SessionService:
             status="active",
         )
         db.add(session)
-        db.commit()
-        db.refresh(session)
+        db.flush()  # penting, belum commit
         return session
-
-    def touch(self, db: Session, session: ChannelSession) -> None:
-        session.last_active_at = datetime.utcnow()
-        db.commit()

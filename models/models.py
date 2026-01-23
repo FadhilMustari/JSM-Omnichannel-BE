@@ -11,6 +11,7 @@ class ChannelStatus(str, enum.Enum):
     inactive = "inactive"
 
 class AuthStatus(str, enum.Enum):
+    pending = "pending_verification"
     anonymous = "anonymous"
     authenticated = "authenticated"
 
@@ -112,4 +113,26 @@ class Message(Base):
     )
 
     channel_session = relationship("ChannelSession", back_populates="messages")
+    
+class EmailVerification(Base):
+    __tablename__ = "email_verifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("channel_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    email = Column(String, nullable=False)
+    token = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    session = relationship("ChannelSession")
+
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException, Depends
 from sqlalchemy.orm import Session
 
-from adapters import ADAPTERS
+from adapters.registry import ADAPTERS
 from dependencies.services import get_webhook_service
 from services.webhook_service import WebhookService
 from core.database import get_db

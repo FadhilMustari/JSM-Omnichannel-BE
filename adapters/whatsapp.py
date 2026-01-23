@@ -1,4 +1,7 @@
+import requests
+
 from adapters.base import BaseAdapter
+from core.config import settings
 from schemas.message import IncomingMessage
 
 class WhatsAppAdapter(BaseAdapter):
@@ -19,3 +22,17 @@ class WhatsAppAdapter(BaseAdapter):
             text=message["text"]["body"],
             raw_payload=payload,
         )
+
+    def send_reply(self, message: IncomingMessage, reply_text: str) -> None:
+        if not settings.whatsapp_token or not settings.whatsapp_phone_number_id:
+            raise RuntimeError("WhatsApp credentials are not configured.")
+
+        url = f"https://graph.facebook.com/v17.0/{settings.whatsapp_phone_number_id}/messages"
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": message.external_user_id,
+            "type": "text",
+            "text": {"body": reply_text},
+        }
+        headers = {"Authorization": f"Bearer {settings.whatsapp_token}"}
+        requests.post(url, json=payload, headers=headers, timeout=10)
