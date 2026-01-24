@@ -20,5 +20,5 @@ async def webhook(
         raise HTTPException(status_code=400, detail="Unsupported platform")
     payload = await request.json()
     normalized_message = adapter.parse(payload)
-    webhook_service.handle_incoming_message(db, normalized_message)
+    await webhook_service.handle_incoming_message(db, normalized_message)
     return {"status": "ok"}

@@ -1,5 +1,5 @@
-import requests
 import logging
+import httpx
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,7 @@ class JiraService:
         self.auth = (settings.jira_email, settings.jira_token)
         self.service_desk_id = settings.jira_service_desk_id
 
-    def email_exists(self, email: str) -> bool:
+    async def email_exists(self, email: str) -> bool:
         """
         Check if email exists as JSM customer in a service desk
         using Jira Service Management Experimental API.
@@ -25,7 +25,13 @@ class JiraService:
         }
         
         try:
-            resp = requests.get(url, headers=headers, auth=self.auth, params=params, timeout=15)
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(
+                    url,
+                    headers=headers,
+                    auth=self.auth,
+                    params=params,
+                )
             if resp.status_code >= 400:
                 logger.error(
                     "Jira customer check failed (%s): %s",
@@ -42,6 +48,6 @@ class JiraService:
                 for c in customers
             )
 
-        except requests.RequestException:
+        except httpx.RequestError:
             logger.exception("Failed to call Jira customer API")
             return False

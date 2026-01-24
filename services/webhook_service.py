@@ -1,3 +1,4 @@
+import asyncio
 import re
 
 from sqlalchemy.orm import Session
@@ -30,7 +31,7 @@ class WebhookService:
         self.jira_service = jira_service
         self.outbox_service = outbox_service
 
-    def handle_incoming_message(self, db: Session, message: IncomingMessage) -> None:
+    async def handle_incoming_message(self, db: Session, message: IncomingMessage) -> None:
         # Cek ke db apakah ada session untuk platform + external_user_id, jika belum ada, buat baru
         session = self.session_service.get_or_create_session(
             db,
@@ -48,24 +49,24 @@ class WebhookService:
         )
         
         if session.auth_status == "authenticated":
-            self._handle_business_flow(db, session, message)
+            await self._handle_business_flow(db, session, message)
         elif session.auth_status == "pending_verification":
             self._handle_pending_verification(db, session)
         else:
             email = message.text.strip()
             if self._is_valid_email(email):
-                self._handle_auth_flow(db, session, message)
+                await self._handle_auth_flow(db, session, message)
             else:
-                intent = self.ai_service.classify_intent(message.text)
+                intent = await self.ai_service.classify_intent(message.text)
                 if intent == "sensitive":
-                    self._handle_auth_flow(db, session, message)
+                    await self._handle_auth_flow(db, session, message)
                 else:
-                    self._handle_business_flow(db, session, message)
+                    await self._handle_business_flow(db, session, message)
         db.commit()
     
-    def _handle_business_flow(self, db, session, message: IncomingMessage):
+    async def _handle_business_flow(self, db, session, message: IncomingMessage):
         # Example: call AI service
-        reply = self.ai_service.generate_reply(
+        reply = await self.ai_service.generate_reply(
             session=session,
             user_message=message.text,
         )
@@ -77,7 +78,7 @@ class WebhookService:
         self._reply(db, session, message, reply)
 
     
-    def _handle_auth_flow(self, db, session, message: IncomingMessage):
+    async def _handle_auth_flow(self, db, session, message: IncomingMessage):
         email = message.text.strip()
 
         if not self._is_valid_email(email):
@@ -90,13 +91,13 @@ class WebhookService:
             self._reply(db, session, message, reply_text)
             return
 
-        if not self.jira_service.email_exists(email):
+        if not await self.jira_service.email_exists(email):
             self._reply(db, session, message, "This email address is not registered in Jira.")
             return
 
         token = self.auth_service.start_email_verification(db, session, email)
         verify_link = self.auth_service.build_verify_link(token)
-        self.email_service.send_verification_email(email, verify_link)
+        await asyncio.to_thread(self.email_service.send_verification_email, email, verify_link)
 
         reply_text = (
             "📧 We have sent a verification email.\n"

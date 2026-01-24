@@ -1,3 +1,7 @@
+import httpx
+
+from core.config import settings
+
 PROMPT_CLASSIFIER="""
 You are an intent classifier for a customer support chatbot.
 
@@ -44,12 +48,8 @@ Tone:
 - Clear
 """
 
-import requests
-
-from core.config import settings
-
 class AIService:
-    def generate_reply(self, session, user_message: str) -> str:
+    async def generate_reply(self, session, user_message: str) -> str:
         if not settings.llm_api_key:
             return f"AI reply for: {user_message}"
 
@@ -67,18 +67,19 @@ class AIService:
             "max_tokens": 300,
         }
         headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
-        response = requests.post(url, json=payload, headers=headers, timeout=15)
-        response.raise_for_status()
-        content = (
-            response.json()
-            .get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
-        )
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            content = (
+                response.json()
+                .get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
         return content or f"AI reply for: {user_message}"
 
-    def classify_intent(self, user_message: str) -> str:
+    async def classify_intent(self, user_message: str) -> str:
         if not settings.llm_api_key:
             return "general"
 
@@ -96,16 +97,17 @@ class AIService:
             "max_tokens": 2,
         }
         headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        response.raise_for_status()
-        content = (
-            response.json()
-            .get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
-            .lower()
-        )
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            content = (
+                response.json()
+                .get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+                .lower()
+            )
 
         if "sensitive" in content:
             return "sensitive"
