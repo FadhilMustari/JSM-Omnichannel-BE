@@ -2,13 +2,13 @@ import re
 
 from sqlalchemy.orm import Session
 
-from adapters.registry import send_reply
 from schemas.message import IncomingMessage
 from services.ai_service import AIService
 from services.auth_service import AuthService
 from services.email_service import EmailService
 from services.jira_service import JiraService
 from services.message_service import MessageService
+from services.outbox_service import OutboxService
 from services.session_service import SessionService
 
 class WebhookService:
@@ -20,6 +20,7 @@ class WebhookService:
         email_service: EmailService,
         ai_service: AIService,
         jira_service: JiraService,
+        outbox_service: OutboxService,
     ):
         self.session_service = session_service
         self.message_service = message_service
@@ -27,6 +28,7 @@ class WebhookService:
         self.email_service = email_service
         self.ai_service = ai_service
         self.jira_service = jira_service
+        self.outbox_service = outbox_service
 
     def handle_incoming_message(self, db: Session, message: IncomingMessage) -> None:
         # Cek ke db apakah ada session untuk platform + external_user_id, jika belum ada, buat baru
@@ -72,7 +74,7 @@ class WebhookService:
             session.id,
             reply,
         )
-        self._reply(message, reply)
+        self._reply(db, session, message, reply)
 
     
     def _handle_auth_flow(self, db, session, message: IncomingMessage):
@@ -85,11 +87,11 @@ class WebhookService:
                 session.id,
                 reply_text,
             )
-            self._reply(message, reply_text)
+            self._reply(db, session, message, reply_text)
             return
 
         if not self.jira_service.email_exists(email):
-            self._reply(message, "This email address is not registered in Jira.")
+            self._reply(db, session, message, "This email address is not registered in Jira.")
             return
 
         token = self.auth_service.start_email_verification(db, session, email)
@@ -110,11 +112,17 @@ class WebhookService:
         self._save_and_reply(db, session, message, reply_text)
 
     def _save_and_reply(self, db, session, message: IncomingMessage, text: str) -> None:
-            self.message_service.save_system_message(db, session.id, text)
-            self._reply(message, text)
+        self.message_service.save_system_message(db, session.id, text)
+        self._reply(db, session, message, text)
     
-    def _reply(self, message: IncomingMessage, text: str) -> None:
-        send_reply(message, text)
+    def _reply(self, db, session, message: IncomingMessage, text: str) -> None:
+        self.outbox_service.enqueue_reply(
+            db,
+            session.id,
+            message.platform,
+            message.external_user_id,
+            text,
+        )
 
     def _is_valid_email(self, email: str) -> bool:
         return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None
