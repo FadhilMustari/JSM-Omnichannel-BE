@@ -19,6 +19,7 @@ class WhatsAppAdapter(BaseAdapter):
         return IncomingMessage(
             platform="whatsapp",
             external_user_id=message["from"],
+            message_id=message["id"],
             text=message["text"]["body"],
             raw_payload=payload,
         )

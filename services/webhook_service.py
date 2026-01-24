@@ -35,11 +35,14 @@ class WebhookService:
             message.platform,
             message.external_user_id,
         )
+        if self.message_service.is_duplicate(db, session.id, message.message_id):
+            return
         # Simpan message ke db
         self.message_service.save_user_message(
             db,
             session.id,
             message.text,
+            external_message_id=message.message_id,
         )
         
         if session.auth_status == "authenticated":

@@ -17,6 +17,7 @@ class LineAdapter(BaseAdapter):
         return IncomingMessage(
             platform="line",
             external_user_id=event["source"]["userId"],
+            message_id=message["id"],
             text=message["text"],
             raw_payload=payload,
         )

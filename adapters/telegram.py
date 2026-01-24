@@ -11,6 +11,7 @@ class TelegramAdapter(BaseAdapter):
         return IncomingMessage(
             platform="telegram",
             external_user_id=str(message["from"]["id"]),
+            message_id=str(message["message_id"]),
             text=message["text"],
             raw_payload=payload
         )
