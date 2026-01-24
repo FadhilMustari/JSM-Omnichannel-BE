@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     
     line_channel_access_token: Optional[str] = Field(None, alias="LINE_CHANNEL_ACCESS_TOKEN")
     
+    llm_api_key: Optional[str] = Field(None, alias="LLM_API_KEY")
+    llm_base_url: str = Field("https://api.openai.com/v1", alias="LLM_BASE_URL")
+    llm_model: str = Field("gpt-4o-mini", alias="LLM_MODEL")
+    
     telegram_bot_token: Optional[str] = Field(None, alias="TELEGRAM_BOT_TOKEN")
 
     class Config:

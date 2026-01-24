@@ -47,8 +47,15 @@ class WebhookService:
         elif session.auth_status == "pending_verification":
             self._handle_pending_verification(db, session)
         else:
-            self._handle_auth_flow(db, session, message)
-        
+            email = message.text.strip()
+            if self._is_valid_email(email):
+                self._handle_auth_flow(db, session, message)
+            else:
+                intent = self.ai_service.classify_intent(message.text)
+                if intent == "sensitive":
+                    self._handle_auth_flow(db, session, message)
+                else:
+                    self._handle_business_flow(db, session, message)
         db.commit()
     
     def _handle_business_flow(self, db, session, message: IncomingMessage):
@@ -69,7 +76,7 @@ class WebhookService:
         email = message.text.strip()
 
         if not self._is_valid_email(email):
-            reply_text = "Please send a valid email address to continue verification."
+            reply_text = "This action requires access to Jira. Please verify your company email to continue."
             self.message_service.save_system_message(
                 db,
                 session.id,
