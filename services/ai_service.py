@@ -1,6 +1,9 @@
+import logging
 import httpx
-
 from core.config import settings
+from core.http_client import get_async_client
+
+logger = logging.getLogger(__name__)
 
 PROMPT_CLASSIFIER="""
 You are an intent classifier for a customer support chatbot.
@@ -67,8 +70,14 @@ class AIService:
             "max_tokens": 300,
         }
         headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.post(url, json=payload, headers=headers)
+        client = get_async_client()
+        try:
+            response = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=15.0,
+            )
             response.raise_for_status()
             content = (
                 response.json()
@@ -77,6 +86,9 @@ class AIService:
                 .get("content", "")
                 .strip()
             )
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            logger.exception("AI generate_reply request failed")
+            return f"AI reply for: {user_message}"
         return content or f"AI reply for: {user_message}"
 
     async def classify_intent(self, user_message: str) -> str:
@@ -97,8 +109,14 @@ class AIService:
             "max_tokens": 2,
         }
         headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
-        async with httpx.AsyncClient(timeout=10) as client:
-            response = await client.post(url, json=payload, headers=headers)
+        client = get_async_client()
+        try:
+            response = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=10.0,
+            )
             response.raise_for_status()
             content = (
                 response.json()
@@ -108,6 +126,9 @@ class AIService:
                 .strip()
                 .lower()
             )
+        except (httpx.RequestError, httpx.HTTPStatusError):
+            logger.exception("AI classify_intent request failed")
+            return "sensitive"
 
         if "sensitive" in content:
             return "sensitive"

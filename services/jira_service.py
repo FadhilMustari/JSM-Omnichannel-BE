@@ -1,6 +1,7 @@
 import logging
 import httpx
 from core.config import settings
+from core.http_client import get_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +26,14 @@ class JiraService:
         }
         
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.get(
-                    url,
-                    headers=headers,
-                    auth=self.auth,
-                    params=params,
-                )
+            client = get_async_client()
+            resp = await client.get(
+                url,
+                headers=headers,
+                auth=self.auth,
+                params=params,
+                timeout=15.0,
+            )
             if resp.status_code >= 400:
                 logger.error(
                     "Jira customer check failed (%s): %s",
