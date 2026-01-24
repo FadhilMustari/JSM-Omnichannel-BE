@@ -36,11 +36,16 @@ SMTP_FROM_EMAIL=
 SMTP_USE_TLS=true
 WHATSAPP_TOKEN=
 WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_APP_SECRET=
 LINE_CHANNEL_ACCESS_TOKEN=
+LINE_CHANNEL_SECRET=
 LLM_API_KEY=
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_MODEL=gpt-4o-mini
 TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+RATE_LIMIT_WINDOW_SECONDS=60
+RATE_LIMIT_MAX=30
 ```
 
 ## Webhook Endpoint
@@ -58,15 +63,16 @@ Point each platform webhook to:
 
 Telegram:
 - Use BotFather to create a bot and get `TELEGRAM_BOT_TOKEN`.
-- Set webhook URL to `{BASE_URL}/webhook/telegram`.
+- Set webhook URL to `{BASE_URL}/webhook/telegram` and configure `TELEGRAM_WEBHOOK_SECRET`.
   Example:
   ```bash
   curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \\
-       -d "url=${BASE_URL}/webhook/telegram"
+       -d "url=${BASE_URL}/webhook/telegram" \\
+       -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}"
   ```
 
 LINE:
-- Create a LINE Messaging API channel and get `LINE_CHANNEL_ACCESS_TOKEN`.
+- Create a LINE Messaging API channel and get `LINE_CHANNEL_ACCESS_TOKEN` and `LINE_CHANNEL_SECRET`.
 - Set webhook URL to `{BASE_URL}/webhook/line`.
   Example:
   ```bash
@@ -77,7 +83,7 @@ LINE:
   ```
 
 WhatsApp Cloud API:
-- Create a Meta App and WhatsApp Business account to get `WHATSAPP_TOKEN` and `WHATSAPP_PHONE_NUMBER_ID`.
+- Create a Meta App and WhatsApp Business account to get `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, and `WHATSAPP_APP_SECRET`.
 - Set webhook URL to `{BASE_URL}/webhook/whatsapp`.
   Example:
   ```bash
