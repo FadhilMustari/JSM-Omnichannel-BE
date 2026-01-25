@@ -1,3 +1,4 @@
+import json
 import logging
 import httpx
 from core.config import settings
@@ -49,6 +50,34 @@ Tone:
 - Professional
 - Friendly
 - Clear
+"""
+
+PROMPT_JIRA_ACTION = """
+You are a Jira support assistant. Your task is to output ONE JSON object only.
+
+Decide the user's intent and extract fields. Allowed intents:
+- update_draft_ticket
+- confirm_create_ticket
+- revise_draft_ticket
+- add_jira_comment
+- get_jira_ticket_status
+- get_jira_comments
+- list_jira_tickets
+- general
+
+If the user is providing information for a new ticket, use update_draft_ticket with a patch.
+If the user confirms to create a ticket, use confirm_create_ticket.
+If the user asks to check status, use get_jira_ticket_status with ticket_key.
+If the user asks to add a comment, use add_jira_comment with ticket_key and comment.
+If the user asks to show comments, use get_jira_comments with ticket_key.
+If the user asks to list tickets, use list_jira_tickets with optional status (open|closed|all).
+
+Patch fields allowed: summary, description, priority (P1-P4), start_date (YYYY-MM-DD).
+Ticket key format: SUPPORT-123.
+
+If you cannot determine, use intent general.
+
+Respond with JSON only. No extra text.
 """
 
 class AIService:
@@ -135,3 +164,45 @@ class AIService:
         if "general" in content:
             return "general"
         return "general"
+
+    async def parse_jira_action(self, user_message: str, draft: dict | None) -> dict:
+        if not settings.llm_api_key:
+            return {"intent": "general"}
+
+        url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+        payload = {
+            "model": settings.llm_model,
+            "messages": [
+                {"role": "system", "content": PROMPT_JIRA_ACTION},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Current draft: {draft}\\n"
+                        f"User message: {user_message}"
+                    ),
+                },
+            ],
+            "temperature": 0,
+            "max_tokens": 200,
+        }
+        headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+        client = get_async_client()
+        try:
+            response = await client.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=15.0,
+            )
+            response.raise_for_status()
+            content = (
+                response.json()
+                .get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            return json.loads(content)
+        except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError):
+            logger.exception("AI parse_jira_action failed")
+            return {"intent": "general"}

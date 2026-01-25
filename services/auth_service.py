@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
-from models.models import ChannelSession, EmailVerification, AuthStatus
+from models.models import ChannelSession, EmailVerification, AuthStatus, User
 from core.config import settings
 
 class AuthService:
@@ -51,6 +51,15 @@ class AuthService:
             return None
 
         session = db.get(ChannelSession, verification.session_id)
+        user = (
+            db.query(User)
+            .filter(User.email == verification.email)
+            .first()
+        )
+        if not user:
+            return None
+
+        session.user_id = user.id
         session.auth_status = AuthStatus.authenticated.value
 
         db.delete(verification)

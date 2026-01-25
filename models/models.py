@@ -1,7 +1,7 @@
 import enum
 import uuid
 from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from core.database import Base
@@ -86,6 +86,7 @@ class ChannelSession(Base):
     )
     last_active_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    draft_ticket = Column(JSONB, nullable=True)
 
     user = relationship("User", back_populates="channel_sessions")
     messages = relationship(

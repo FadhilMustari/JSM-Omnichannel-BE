@@ -1,0 +1,11 @@
+PROJECT_KEY = "SUPPORT"
+SERVICE_DESK_ID = "3"
+REQUEST_TYPE_ID = "30"
+START_DATE_FIELD = "customfield_10089"
+
+PRIORITY_MAPPING = {
+    "P1": "10001",
+    "P2": "10002",
+    "P3": "10003",
+    "P4": "10004",
+}
