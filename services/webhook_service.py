@@ -94,8 +94,7 @@ class WebhookService:
 
         self.message_service.save_system_message(db, session.id, reply)
         self._reply(db, session, message, reply)
-
-    
+   
     async def _handle_auth_flow(self, db, session, message: IncomingMessage):
         email = message.text.strip()
 
@@ -164,11 +163,11 @@ class WebhookService:
             return f"I still need: {fields}. Please provide them."
 
         return (
-            "Here is your ticket draft:\\n"
-            f"Summary: {draft.get('summary')}\\n"
-            f"Description: {draft.get('description')}\\n"
-            f"Priority: {draft.get('priority')}\\n"
-            f"Start Date: {draft.get('start_date')}\\n\\n"
+            "Here is your ticket draft:\n"
+            f"Summary: {draft.get('summary')}\n"
+            f"Description: {draft.get('description')}\n"
+            f"Priority: {draft.get('priority')}\n"
+            f"Start Date: {draft.get('start_date')}\n\n"
             "Reply with yes/ok/submit to create the ticket, or tell me what to change."
         )
 
@@ -248,8 +247,8 @@ class WebhookService:
             return "You are not the reporter of this ticket."
 
         return (
-            f"{ticket_key} status: {detail.get('status')}\\n"
-            f"Assignee: {detail.get('assignee') or 'Unassigned'}\\n"
+            f"{ticket_key} status: {detail.get('status')}\n"
+            f"Assignee: {detail.get('assignee') or 'Unassigned'}\n"
             f"Priority: {detail.get('priority')}"
         )
 
@@ -283,7 +282,7 @@ class WebhookService:
             author = comment.get("author") or "Unknown"
             body = comment.get("body") or ""
             formatted.append(f"- {author}: {body}")
-        return "Latest comments:\\n" + "\\n".join(formatted)
+        return "Latest comments:\n" + "\n".join(formatted)
 
     async def _list_jira_tickets(self, db, session, action: dict) -> str:
         user = db.get(User, session.user_id) if session.user_id else None
@@ -305,10 +304,29 @@ class WebhookService:
         if not tickets:
             return "No tickets found."
 
+        def status_emoji(status: str | None) -> str:
+            text = (status or "").lower()
+            if any(key in text for key in ["done", "closed", "resolved"]):
+                return "⚪"
+            if any(key in text for key in ["progress", "review", "blocked"]):
+                return "🟡"
+            return "🟢"
+
         lines = []
         for ticket in tickets:
+            status = ticket.get("status") or "Unknown"
+            priority = ticket.get("priority") or "-"
+            summary = ticket.get("summary") or "-"
             lines.append(
-                f"- {ticket.get('ticket_key')}: {ticket.get('summary')} "
-                f"({ticket.get('status')})"
+                f"{status_emoji(status)} {ticket.get('ticket_key')}\n"
+                f"{summary}\n"
+                f"Status   : {status}\n"
+                f"Priority : {priority}"
             )
-        return "Your tickets:\\n" + "\\n".join(lines)
+
+        header = (
+            "📋 Here’s your ticket:"
+            if len(tickets) == 1
+            else f"📋 Here are your tickets: ({len(tickets)})"
+        )
+        return header + "\n\n" + "\n\n".join(lines)
