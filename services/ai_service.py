@@ -81,20 +81,18 @@ Respond with JSON only. No extra text.
 """
 
 class AIService:
-    async def generate_reply(self, session, user_message: str) -> str:
+    async def generate_reply(self, session, user_message: str, history: list[dict] | None = None) -> str:
         if not settings.llm_api_key:
             return f"AI reply for: {user_message}"
 
         url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+        messages = [{"role": "system", "content": PROMPT_REPLY}]
+        if history:
+            messages.extend(history)
+        messages.append({"role": "user", "content": user_message})
         payload = {
             "model": settings.llm_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": PROMPT_REPLY,
-                },
-                {"role": "user", "content": user_message},
-            ],
+            "messages": messages,
             "temperature": 0.4,
             "max_tokens": 300,
         }
@@ -165,23 +163,31 @@ class AIService:
             return "general"
         return "general"
 
-    async def parse_jira_action(self, user_message: str, draft: dict | None) -> dict:
+    async def parse_jira_action(
+        self,
+        user_message: str,
+        draft: dict | None,
+        history: list[dict] | None = None,
+    ) -> dict:
         if not settings.llm_api_key:
             return {"intent": "general"}
 
         url = f"{settings.llm_base_url.rstrip('/')}/chat/completions"
+        messages = [{"role": "system", "content": PROMPT_JIRA_ACTION}]
+        if history:
+            messages.extend(history)
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"Current draft: {draft}\\n"
+                    f"User message: {user_message}"
+                ),
+            }
+        )
         payload = {
             "model": settings.llm_model,
-            "messages": [
-                {"role": "system", "content": PROMPT_JIRA_ACTION},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Current draft: {draft}\\n"
-                        f"User message: {user_message}"
-                    ),
-                },
-            ],
+            "messages": messages,
             "temperature": 0,
             "max_tokens": 200,
         }

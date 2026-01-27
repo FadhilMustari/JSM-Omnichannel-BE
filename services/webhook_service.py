@@ -43,7 +43,7 @@ class WebhookService:
         if self.message_service.is_duplicate(db, session.id, message.message_id):
             return
         # Simpan message ke db
-        self.message_service.save_user_message(
+        saved_user_message = self.message_service.save_user_message(
             db,
             session.id,
             message.text,
@@ -51,7 +51,7 @@ class WebhookService:
         )
         
         if session.auth_status == "authenticated":
-            await self._handle_business_flow(db, session, message)
+            await self._handle_business_flow(db, session, message, saved_user_message.id)
         elif session.auth_status == "pending_verification":
             self._handle_pending_verification(db, session)
         else:
@@ -63,13 +63,15 @@ class WebhookService:
                 if intent == "sensitive":
                     await self._handle_auth_flow(db, session, message)
                 else:
-                    await self._handle_business_flow(db, session, message)
+                    await self._handle_business_flow(db, session, message, saved_user_message.id)
         db.commit()
     
-    async def _handle_business_flow(self, db, session, message: IncomingMessage):
+    async def _handle_business_flow(self, db, session, message: IncomingMessage, exclude_message_id):
+        history = self._build_ai_history(db, session.id, exclude_message_id, limit=8)
         action = await self.ai_service.parse_jira_action(
             message.text,
             session.draft_ticket,
+            history=history,
         )
         intent = (action.get("intent") or "general").lower()
 
@@ -90,6 +92,7 @@ class WebhookService:
             reply = await self.ai_service.generate_reply(
                 session=session,
                 user_message=message.text,
+                history=history,
             )
 
         self.message_service.save_system_message(db, session.id, reply)
@@ -144,6 +147,20 @@ class WebhookService:
 
     def _is_valid_email(self, email: str) -> bool:
         return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None
+
+    def _build_ai_history(self, db, session_id, exclude_message_id, limit: int = 8) -> list[dict]:
+        messages = self.message_service.get_recent_messages(db, session_id, limit=limit + 1)
+        history = []
+        for message in messages:
+            if message.id == exclude_message_id:
+                continue
+            role = "assistant" if message.role == "system" else "user"
+            if message.content:
+                history.append({"role": role, "content": message.content})
+            if len(history) >= limit:
+                break
+        history.reverse()
+        return history
 
     def _update_draft(self, db, session, patch: dict) -> str:
         draft = session.draft_ticket or {}

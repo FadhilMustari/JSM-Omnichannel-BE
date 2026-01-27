@@ -1,6 +1,7 @@
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from models.models import Message
 
 class MessageService:
@@ -43,4 +44,18 @@ class MessageService:
             )
             .first()
             is not None
+        )
+
+    def get_recent_messages(
+        self,
+        db: Session,
+        session_id,
+        limit: int = 8,
+    ) -> list[Message]:
+        return (
+            db.query(Message)
+            .filter(Message.session_id == session_id)
+            .order_by(desc(Message.created_at), desc(Message.id))
+            .limit(limit)
+            .all()
         )
