@@ -123,7 +123,7 @@ class JiraService:
 
     async def get_ticket_detail(self, ticket_key: str) -> Dict[str, Any]:
         url = self._url(f"/rest/api/3/issue/{ticket_key}")
-        params = {"fields": "summary,status,assignee,priority,reporter"}
+        params = {"fields": "summary,description,status,assignee,priority,reporter,created,updated"}
         client = get_async_client()
         try:
             resp = await client.get(
@@ -150,10 +150,13 @@ class JiraService:
         return {
             "ticket_key": data.get("key"),
             "summary": fields.get("summary"),
+            "description": fields.get("description"),
             "status": status.get("name"),
             "assignee": assignee.get("displayName"),
             "priority": priority.get("name"),
             "reporter_email": reporter.get("emailAddress"),
+            "created_at": fields.get("created"),
+            "updated_at": fields.get("updated"),
         }
 
     async def list_tickets_by_reporter(
@@ -207,6 +210,57 @@ class JiraService:
                     "assignee": assignee.get("displayName"),
                     "priority": priority.get("name"),
                     "created_at": fields.get("created"),
+                }
+            )
+        return results
+
+    async def get_issues_by_keys(self, ticket_keys: list[str]) -> List[Dict[str, Any]]:
+        if not ticket_keys:
+            return []
+        keys = ",".join(ticket_keys)
+        jql = f"key in ({keys})"
+        url = self._url("/rest/api/3/search/jql")
+        payload = {
+            "jql": jql,
+            "fields": ["summary", "status", "assignee", "priority", "reporter", "created", "updated"],
+            "maxResults": len(ticket_keys),
+        }
+        client = get_async_client()
+        try:
+            resp = await client.post(
+                url,
+                headers=self._headers(),
+                auth=self.auth,
+                json=payload,
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPStatusError:
+            logger.exception("Jira get_issues_by_keys failed: %s", resp.text)
+            raise RuntimeError("Failed to fetch Jira tickets")
+        except httpx.RequestError:
+            logger.exception("Jira get_issues_by_keys request error")
+            raise RuntimeError("Failed to fetch Jira tickets")
+
+        issues = data.get("issues", [])
+        results: List[Dict[str, Any]] = []
+        for issue in issues:
+            fields = issue.get("fields", {})
+            assignee = fields.get("assignee") or {}
+            priority = fields.get("priority") or {}
+            status = fields.get("status") or {}
+            reporter = fields.get("reporter") or {}
+            results.append(
+                {
+                    "ticket_key": issue.get("key"),
+                    "summary": fields.get("summary"),
+                    "status": status.get("name"),
+                    "assignee": assignee.get("displayName"),
+                    "priority": priority.get("name"),
+                    "reporter_email": reporter.get("emailAddress"),
+                    "created_at": fields.get("created"),
+                    "updated_at": fields.get("updated"),
                 }
             )
         return results

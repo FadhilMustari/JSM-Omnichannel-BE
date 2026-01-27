@@ -12,7 +12,7 @@ from services.jira_service import JiraService
 from services.message_service import MessageService
 from services.outbox_service import OutboxService
 from services.session_service import SessionService
-from models.models import User
+from models.models import User, TicketLink
 
 class WebhookService:
     def __init__(
@@ -215,6 +215,14 @@ class WebhookService:
         db.add(session)
 
         issue_key = result.get("issue_key")
+        if issue_key and user.organization_id:
+            link = TicketLink(
+                ticket_key=issue_key,
+                session_id=session.id,
+                organization_id=user.organization_id,
+                platform=session.platform,
+            )
+            db.add(link)
         return f"Ticket created: {issue_key}"
 
     async def _add_jira_comment(self, db, session, action: dict) -> str:

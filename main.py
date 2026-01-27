@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from endpoints.webhook import router as webhook_router
+from endpoints.admin import router as admin_router
 from endpoints.auth import router as auth_router
 from core.http_client import init_async_client, close_async_client
 
@@ -7,6 +8,7 @@ app = FastAPI()
 
 app.include_router(webhook_router)
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 @app.on_event("startup")
 async def startup() -> None:

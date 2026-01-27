@@ -86,6 +86,7 @@ class ChannelSession(Base):
         nullable=False,
     )
     last_active_at = Column(DateTime(timezone=True))
+    last_read_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     draft_ticket = Column(JSONB, nullable=True)
 
@@ -123,6 +124,35 @@ class Message(Base):
     )
 
     channel_session = relationship("ChannelSession", back_populates="messages")
+
+
+class TicketLink(Base):
+    __tablename__ = "ticket_links"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticket_key = Column(String, nullable=False, unique=True, index=True)
+    session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("channel_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    organization_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    platform = Column(String, nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    channel_session = relationship("ChannelSession")
+    organization = relationship("Organization")
 
 class OutboxStatus(str, enum.Enum):
     pending = "pending"
