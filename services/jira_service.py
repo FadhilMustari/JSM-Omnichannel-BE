@@ -16,9 +16,10 @@ logger = logging.getLogger(__name__)
 
 class JiraService:
     def __init__(self):
-        self.base_url = settings.jira_base
-        self.auth = (settings.jira_email, settings.jira_token)
-        self.service_desk_id = settings.jira_service_desk_id
+        base_url, email, token, service_desk_id = settings.require_jira()
+        self.base_url = base_url
+        self.auth = (email, token)
+        self.service_desk_id = service_desk_id
 
     def _headers(self) -> Dict[str, str]:
         return {"Accept": "application/json", "Content-Type": "application/json"}

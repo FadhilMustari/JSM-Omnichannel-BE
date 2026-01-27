@@ -11,16 +11,16 @@ class Settings(BaseSettings):
     
     database_url: str = Field(..., alias="DATABASE_URL")
     
-    jira_base: str = Field(..., alias="JIRA_BASE")
-    jira_email: str = Field(..., alias="JIRA_EMAIL")
-    jira_token: str = Field(..., alias="JIRA_TOKEN")
-    jira_service_desk_id: int = Field(..., alias="JIRA_SERVICE_DESK_ID")
+    jira_base: Optional[str] = Field(None, alias="JIRA_BASE")
+    jira_email: Optional[str] = Field(None, alias="JIRA_EMAIL")
+    jira_token: Optional[str] = Field(None, alias="JIRA_TOKEN")
+    jira_service_desk_id: Optional[int] = Field(None, alias="JIRA_SERVICE_DESK_ID")
     
-    smtp_host: str = Field(..., alias="SMTP_HOST")
-    smtp_port: int = Field(..., alias="SMTP_PORT")
-    smtp_username: str = Field(..., alias="SMTP_USERNAME")
-    smtp_password: str = Field(..., alias="SMTP_PASSWORD")
-    smtp_from_email: str = Field(..., alias="SMTP_FROM_EMAIL")
+    smtp_host: Optional[str] = Field(None, alias="SMTP_HOST")
+    smtp_port: Optional[int] = Field(None, alias="SMTP_PORT")
+    smtp_username: Optional[str] = Field(None, alias="SMTP_USERNAME")
+    smtp_password: Optional[str] = Field(None, alias="SMTP_PASSWORD")
+    smtp_from_email: Optional[str] = Field(None, alias="SMTP_FROM_EMAIL")
     smtp_use_tls: bool = Field(True, alias="SMTP_USE_TLS")
     
     whatsapp_token: Optional[str] = Field(None, alias="WHATSAPP_TOKEN")
@@ -57,6 +57,46 @@ class Settings(BaseSettings):
 
     def validate_runtime(self) -> None:
         _ = self.public_base_url
+
+    def require_jira(self) -> tuple[str, str, str, int]:
+        missing: list[str] = []
+        if not self.jira_base:
+            missing.append("JIRA_BASE")
+        if not self.jira_email:
+            missing.append("JIRA_EMAIL")
+        if not self.jira_token:
+            missing.append("JIRA_TOKEN")
+        if self.jira_service_desk_id is None:
+            missing.append("JIRA_SERVICE_DESK_ID")
+
+        if missing:
+            raise RuntimeError(f"Jira config missing: {', '.join(missing)}")
+
+        return (self.jira_base, self.jira_email, self.jira_token, self.jira_service_desk_id)
+
+    def require_smtp(self) -> tuple[str, int, str, str, str]:
+        missing: list[str] = []
+        if not self.smtp_host:
+            missing.append("SMTP_HOST")
+        if self.smtp_port is None:
+            missing.append("SMTP_PORT")
+        if not self.smtp_username:
+            missing.append("SMTP_USERNAME")
+        if not self.smtp_password:
+            missing.append("SMTP_PASSWORD")
+        if not self.smtp_from_email:
+            missing.append("SMTP_FROM_EMAIL")
+
+        if missing:
+            raise RuntimeError(f"SMTP config missing: {', '.join(missing)}")
+
+        return (
+            self.smtp_host,
+            self.smtp_port,
+            self.smtp_username,
+            self.smtp_password,
+            self.smtp_from_email,
+        )
 
     @classmethod
     def settings_customise_sources(

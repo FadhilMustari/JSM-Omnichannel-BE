@@ -27,20 +27,22 @@ class EmailService:
         )
 
     def _send_email(self, to_email: str, subject: str, body: str) -> None:
+        smtp_host, smtp_port, smtp_username, smtp_password, smtp_from_email = settings.require_smtp()
+
         message = MIMEMultipart()
-        message["From"] = settings.smtp_from_email
+        message["From"] = smtp_from_email
         message["To"] = to_email
         message["Subject"] = subject
 
         message.attach(MIMEText(body, "plain"))
 
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
             if settings.smtp_use_tls:
                 server.starttls()
 
             server.login(
-                settings.smtp_username,
-                settings.smtp_password,
+                smtp_username,
+                smtp_password,
             )
 
             server.send_message(message)

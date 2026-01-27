@@ -1,15 +1,38 @@
-__pycache__/
-*.pyc
-*.pyo
+# Python
+
+**pycache**/
+_.pyc
+_.pyo
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.venv/
+
+# Env
 
 .env
-.env.*
+.env.\*
+
+# Git
 
 .git/
 .github/
 
-alembic/versions/*.pyc
+# OS / Editor
 
+.DS_Store
+.idea/
+.vscode/
+
+# Node (kalau ada)
+
+node_modules/
+
+# Build artifacts
+
+dist/
+build/
+
+# Alembic
+
+alembic/versions/\*.pyc
