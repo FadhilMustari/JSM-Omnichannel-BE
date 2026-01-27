@@ -108,4 +108,4 @@ class AuthService:
         return session
     
     def build_verify_link(self, token: str) -> str:
-        return f"{settings.base_url}/auth/verify?token={token}"
+        return f"{settings.public_base_url}/auth/verify?token={token}"

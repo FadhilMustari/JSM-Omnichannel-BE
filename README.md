@@ -14,7 +14,7 @@ Backend service for omnichannel webhook handling (WhatsApp/Telegram/LINE), sessi
    ```bash
    pip install -r requirements.txt
    ```
-3. Create `.env` file (see required variables below).
+3. Create `.env` file for local development (see variables below).
 4. Run migrations:
    ```bash
    alembic upgrade head
@@ -22,9 +22,14 @@ Backend service for omnichannel webhook handling (WhatsApp/Telegram/LINE), sessi
 
 ## Required Environment Variables
 
-Set these in `.env` (or export them in your shell):
+Local development: set these in `.env` (and optionally `.env.local`) or export them in your shell.
+
+Production (Cloud Run): set environment variables in Cloud Run (do not rely on `.env`).
+`BASE_URL` is required in production to generate absolute links and webhook URLs.
 
 ```
+ENVIRONMENT=development
+PORT=8000
 BASE_URL=
 DATABASE_URL=
 JIRA_BASE=

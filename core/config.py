@@ -4,7 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 class Settings(BaseSettings):
-    base_url: str = Field(..., alias="BASE_URL")
+    environment: str = Field("development", alias="ENVIRONMENT")
+    port: int = Field(8000, alias="PORT")
+
+    base_url: Optional[str] = Field(None, alias="BASE_URL")
     
     database_url: str = Field(..., alias="DATABASE_URL")
     
@@ -37,7 +40,23 @@ class Settings(BaseSettings):
     rate_limit_window_seconds: int = Field(60, alias="RATE_LIMIT_WINDOW_SECONDS")
     rate_limit_max: int = Field(30, alias="RATE_LIMIT_MAX")
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(
+        env_file=(".env", ".env.local"),
+        case_sensitive=True,
+    )
+
+    @property
+    def public_base_url(self) -> str:
+        if self.base_url:
+            return self.base_url.rstrip("/")
+
+        if self.environment.lower() in {"prod", "production"}:
+            raise RuntimeError("BASE_URL is required when ENVIRONMENT=production")
+
+        return f"http://localhost:{self.port}"
+
+    def validate_runtime(self) -> None:
+        _ = self.public_base_url
 
     @classmethod
     def settings_customise_sources(
@@ -48,6 +67,6 @@ class Settings(BaseSettings):
         dotenv_settings,
         file_secret_settings,
     ):
-        return (dotenv_settings, env_settings, init_settings)
+        return (init_settings, env_settings, dotenv_settings, file_secret_settings)
 
 settings = Settings()
