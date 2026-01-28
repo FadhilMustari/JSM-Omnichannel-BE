@@ -15,9 +15,5 @@ COPY . .
 
 EXPOSE 8080
 
-# Default: API service (Cloud Run Service). For a worker Cloud Run Service, override to:
-#   uvicorn scripts.worker_service:app --host 0.0.0.0 --port ${PORT:-8080}
-#
-# For Cloud Run Jobs (no HTTP port needed), you can run:
-#   python scripts/outbox_worker.py
+# Default: API service (Cloud Run Service).
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]

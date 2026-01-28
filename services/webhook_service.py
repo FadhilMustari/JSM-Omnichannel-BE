@@ -4,13 +4,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from adapters.registry import send_reply
 from schemas.message import IncomingMessage
 from services.ai_service import AIService
 from services.auth_service import AuthService
 from services.email_service import EmailService
 from services.jira_service import JiraService
 from services.message_service import MessageService
-from services.outbox_service import OutboxService
 from services.session_service import SessionService
 from models.models import User, TicketLink
 
@@ -23,7 +23,6 @@ class WebhookService:
         email_service: EmailService,
         ai_service: AIService,
         jira_service: JiraService,
-        outbox_service: OutboxService,
     ):
         self.session_service = session_service
         self.message_service = message_service
@@ -31,7 +30,6 @@ class WebhookService:
         self.email_service = email_service
         self.ai_service = ai_service
         self.jira_service = jira_service
-        self.outbox_service = outbox_service
 
     async def handle_incoming_message(self, db: Session, message: IncomingMessage) -> None:
         # Cek ke db apakah ada session untuk platform + external_user_id, jika belum ada, buat baru
@@ -137,13 +135,7 @@ class WebhookService:
         self._reply(db, session, message, text)
     
     def _reply(self, db, session, message: IncomingMessage, text: str) -> None:
-        self.outbox_service.enqueue_reply(
-            db,
-            session.id,
-            message.platform,
-            message.external_user_id,
-            text,
-        )
+        send_reply(message, text)
 
     def _is_valid_email(self, email: str) -> bool:
         return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None

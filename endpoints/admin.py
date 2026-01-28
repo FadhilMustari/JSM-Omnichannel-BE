@@ -14,9 +14,10 @@ from models.models import (
     TicketLink,
     User,
 )
+from adapters.registry import send_reply
+from schemas.message import IncomingMessage
 from services.jira_service import JiraService
-from dependencies.services import get_outbox_service, get_jira_service
-from services.outbox_service import OutboxService
+from dependencies.services import get_jira_service
 from schemas.admin import (
     AdminCommentCreate,
     AdminMessageCreate,
@@ -215,7 +216,6 @@ def send_admin_message(
     session_id: str,
     body: AdminMessageCreate,
     db: Session = Depends(get_db),
-    outbox_service: OutboxService = Depends(get_outbox_service),
 ) -> dict:
     session = db.get(ChannelSession, session_id)
     if not session:
@@ -227,14 +227,15 @@ def send_admin_message(
         content=body.text,
     )
     db.add(message)
-    outbox_service.enqueue_reply(
-        db,
-        session.id,
-        session.platform,
-        session.external_user_id,
-        body.text,
-    )
     db.commit()
+    outgoing = IncomingMessage(
+        platform=session.platform,
+        external_user_id=session.external_user_id,
+        message_id="",
+        text="",
+        raw_payload={},
+    )
+    send_reply(outgoing, body.text)
     return {"status": "ok"}
 
 

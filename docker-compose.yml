@@ -11,9 +11,3 @@ services:
       BASE_URL: http://localhost:8080
     ports:
       - "8080:8080"
-
-  worker:
-    build: .
-    image: jsm-omnichannel-be:local
-    env_file: .env
-    command: python scripts/outbox_worker.py

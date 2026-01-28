@@ -117,12 +117,6 @@ Start the API:
 uvicorn main:app --reload
 ```
 
-Start the outbox worker (separate terminal):
-
-```bash
-PYTHONPATH=. python scripts/outbox_worker.py
-```
-
 ## Running with Docker Compose
 
 - External DB (recommended): set `DATABASE_URL` in `.env` to your external Postgres, then run:
@@ -130,14 +124,6 @@ PYTHONPATH=. python scripts/outbox_worker.py
 - Local Postgres in Docker: run with the extra compose file:
   - `docker compose -f docker-compose.yml -f docker-compose.localdb.yml up --build`
 
-## Deploying API + Worker (Cloud Run)
-
-- API: deploy as a Cloud Run Service using the default container command.
-- Worker:
-  - Recommended: deploy as a Cloud Run Job with command `python scripts/outbox_worker.py`, or
-  - Alternative (Cloud Run Service): deploy with command `uvicorn scripts.worker_service:app --host 0.0.0.0 --port $PORT`.
-
 ## Notes
 
-- The worker processes queued replies from the outbox table. Keep it running in production.
 - If you update the database schema, re-run `alembic upgrade head`.
