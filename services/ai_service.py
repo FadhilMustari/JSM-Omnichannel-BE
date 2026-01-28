@@ -113,7 +113,17 @@ class AIService:
                 .get("content", "")
                 .strip()
             )
-        except (httpx.RequestError, httpx.HTTPStatusError):
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text if exc.response is not None else ""
+            request_id = exc.response.headers.get("x-request-id") if exc.response is not None else None
+            logger.error(
+                "AI generate_reply request failed with status=%s request_id=%s body=%s",
+                exc.response.status_code if exc.response is not None else "unknown",
+                request_id,
+                body[:1000],
+            )
+            return f"AI reply for: {user_message}"
+        except httpx.RequestError:
             logger.exception("AI generate_reply request failed")
             return f"AI reply for: {user_message}"
         return content or f"AI reply for: {user_message}"
@@ -153,7 +163,17 @@ class AIService:
                 .strip()
                 .lower()
             )
-        except (httpx.RequestError, httpx.HTTPStatusError):
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text if exc.response is not None else ""
+            request_id = exc.response.headers.get("x-request-id") if exc.response is not None else None
+            logger.error(
+                "AI classify_intent request failed with status=%s request_id=%s body=%s",
+                exc.response.status_code if exc.response is not None else "unknown",
+                request_id,
+                body[:1000],
+            )
+            return "sensitive"
+        except httpx.RequestError:
             logger.exception("AI classify_intent request failed")
             return "sensitive"
 
