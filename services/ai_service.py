@@ -56,6 +56,7 @@ PROMPT_JIRA_ACTION = """
 You are a Jira support assistant. Your task is to output ONE JSON object only.
 
 Decide the user's intent and extract fields. Allowed intents:
+- start_create_ticket
 - update_draft_ticket
 - confirm_create_ticket
 - revise_draft_ticket
@@ -66,6 +67,7 @@ Decide the user's intent and extract fields. Allowed intents:
 - general
 
 If the user is providing information for a new ticket, use update_draft_ticket with a patch.
+If the user wants to create or start a new ticket (but has not provided details yet), use start_create_ticket.
 If the user confirms to create a ticket, use confirm_create_ticket.
 If the user asks to check status, use get_jira_ticket_status with ticket_key.
 If the user asks to add a comment, use add_jira_comment with ticket_key and comment.

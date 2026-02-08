@@ -103,7 +103,7 @@ class WebhookService:
         )
         intent = (action.get("intent") or "general").lower()
         patch = action.get("patch") or {}
-        if intent not in {"update_draft_ticket", "revise_draft_ticket"}:
+        if intent not in {"update_draft_ticket", "revise_draft_ticket", "start_create_ticket"}:
             patch = self._fallback_patch_from_text(
                 message.text,
                 session.draft_ticket or {},
@@ -118,6 +118,8 @@ class WebhookService:
 
         if intent in {"update_draft_ticket", "revise_draft_ticket"}:
             reply = self._update_draft(db, session, patch)
+        elif intent == "start_create_ticket":
+            reply = self._start_ticket_flow(db, session, patch)
         elif intent == "confirm_create_ticket":
             reply = await self._confirm_create_ticket(db, session)
         elif intent == "add_jira_comment":
@@ -206,6 +208,8 @@ class WebhookService:
         normalized = text.strip()
         if not normalized:
             return patch
+        if self._looks_like_create_request(normalized):
+            return patch
 
         lowered = normalized.lower()
 
@@ -260,19 +264,18 @@ class WebhookService:
             if key in allowed and value:
                 draft[key] = value
 
-        missing = [field for field in allowed if not draft.get(field)]
+        missing = self._missing_draft_fields(draft)
         draft["status"] = "preview" if not missing else "collecting"
         draft["last_update"] = datetime.now(timezone.utc).isoformat()
         session.draft_ticket = draft
         db.add(session)
 
         if missing:
-            fields = ", ".join(missing)
             self.logger.info(
                 "Draft missing fields",
-                extra={"session_id": str(session.id), "missing": fields},
+                extra={"session_id": str(session.id), "missing": ", ".join(missing)},
             )
-            return f"I still need: {fields}. Please provide them."
+            return self._prompt_next_missing_field(draft)
 
         return (
             "Here is your ticket draft:\n"
@@ -286,14 +289,13 @@ class WebhookService:
     async def _confirm_create_ticket(self, db, session) -> str:
         draft = session.draft_ticket or {}
         required = ["summary", "description", "priority", "start_date"]
-        missing = [field for field in required if not draft.get(field)]
+        missing = self._missing_draft_fields(draft)
         if missing:
-            fields = ", ".join(missing)
             self.logger.info(
                 "Cannot create ticket, missing fields",
-                extra={"session_id": str(session.id), "missing": fields},
+                extra={"session_id": str(session.id), "missing": ", ".join(missing)},
             )
-            return f"I still need: {fields}. Please provide them."
+            return self._prompt_next_missing_field(draft)
 
         user = db.get(User, session.user_id) if session.user_id else None
         if not user:
@@ -534,3 +536,45 @@ class WebhookService:
             else f"📋 Here are your tickets: ({len(tickets)})"
         )
         return header + "\n\n" + "\n\n".join(lines)
+
+    def _start_ticket_flow(self, db, session, patch: dict) -> str:
+        if patch:
+            return self._update_draft(db, session, patch)
+
+        draft = session.draft_ticket or {}
+        draft["status"] = "collecting"
+        draft["last_update"] = datetime.now(timezone.utc).isoformat()
+        session.draft_ticket = draft
+        db.add(session)
+        return self._prompt_next_missing_field(draft)
+
+    def _missing_draft_fields(self, draft: dict) -> list[str]:
+        ordered_fields = ["summary", "description", "priority", "start_date"]
+        return [field for field in ordered_fields if not draft.get(field)]
+
+    def _looks_like_create_request(self, text: str) -> bool:
+        lowered = text.lower()
+        keywords = [
+            "create ticket",
+            "new ticket",
+            "open ticket",
+            "buat tiket",
+            "bikin tiket",
+            "buat ticket",
+            "bikin ticket",
+        ]
+        return any(keyword in lowered for keyword in keywords)
+
+    def _prompt_next_missing_field(self, draft: dict) -> str:
+        missing = self._missing_draft_fields(draft)
+        if not missing:
+            return "All required fields are present. Please reply yes/ok/submit to create the ticket."
+
+        next_field = missing[0]
+        prompts = {
+            "summary": "Please provide a short summary for the ticket.",
+            "description": "Please describe the issue in more detail.",
+            "priority": "What priority is this? (low/medium/high/urgent)",
+            "start_date": "What is the start date? (YYYY-MM-DD)",
+        }
+        return prompts.get(next_field, "Please provide the missing ticket detail.")
