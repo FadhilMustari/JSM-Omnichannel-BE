@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -30,8 +31,17 @@ class WebhookService:
         self.email_service = email_service
         self.ai_service = ai_service
         self.jira_service = jira_service
+        self.logger = logging.getLogger(__name__)
 
     async def handle_incoming_message(self, db: Session, message: IncomingMessage) -> None:
+        self.logger.info(
+            "WebhookService received message",
+            extra={
+                "platform": message.platform,
+                "external_user_id": message.external_user_id,
+                "message_id": message.message_id,
+            },
+        )
         # Cek ke db apakah ada session untuk platform + external_user_id, jika belum ada, buat baru
         session = self.session_service.get_or_create_session(
             db,
@@ -39,6 +49,10 @@ class WebhookService:
             message.external_user_id,
         )
         if self.message_service.is_duplicate(db, session.id, message.message_id):
+            self.logger.info(
+                "Duplicate message ignored",
+                extra={"session_id": str(session.id), "message_id": message.message_id},
+            )
             return
         # Simpan message ke db
         saved_user_message = self.message_service.save_user_message(
@@ -49,15 +63,31 @@ class WebhookService:
         )
         
         if session.auth_status == "authenticated":
+            self.logger.info(
+                "Auth status: authenticated",
+                extra={"session_id": str(session.id)},
+            )
             await self._handle_business_flow(db, session, message, saved_user_message.id)
         elif session.auth_status == "pending_verification":
-            self._handle_pending_verification(db, session)
+            self.logger.info(
+                "Auth status: pending_verification",
+                extra={"session_id": str(session.id)},
+            )
+            await self._handle_pending_verification(db, session, message)
         else:
+            self.logger.info(
+                "Auth status: anonymous",
+                extra={"session_id": str(session.id)},
+            )
             email = message.text.strip()
             if self._is_valid_email(email):
                 await self._handle_auth_flow(db, session, message)
             else:
                 intent = await self.ai_service.classify_intent(message.text)
+                self.logger.info(
+                    "Classified intent",
+                    extra={"session_id": str(session.id), "intent": intent},
+                )
                 if intent == "sensitive":
                     await self._handle_auth_flow(db, session, message)
                 else:
@@ -72,6 +102,10 @@ class WebhookService:
             history=history,
         )
         intent = (action.get("intent") or "general").lower()
+        self.logger.info(
+            "Parsed Jira action",
+            extra={"session_id": str(session.id), "intent": intent},
+        )
 
         if intent in {"update_draft_ticket", "revise_draft_ticket"}:
             patch = action.get("patch") or {}
@@ -94,48 +128,64 @@ class WebhookService:
             )
 
         self.message_service.save_system_message(db, session.id, reply)
-        self._reply(db, session, message, reply)
+        await self._reply(db, session, message, reply)
    
     async def _handle_auth_flow(self, db, session, message: IncomingMessage):
         email = message.text.strip()
 
         if not self._is_valid_email(email):
+            self.logger.info(
+                "Invalid email in auth flow",
+                extra={"session_id": str(session.id)},
+            )
             reply_text = "This action requires access to Jira. Please verify your company email to continue."
             self.message_service.save_system_message(
                 db,
                 session.id,
                 reply_text,
             )
-            self._reply(db, session, message, reply_text)
+            await self._reply(db, session, message, reply_text)
             return
 
         if not await self.jira_service.email_exists(email):
-            self._reply(db, session, message, "This email address is not registered in Jira.")
+            self.logger.warning(
+                "Email not found in Jira",
+                extra={"session_id": str(session.id)},
+            )
+            await self._reply(db, session, message, "This email address is not registered in Jira.")
             return
 
         token = self.auth_service.start_email_verification(db, session, email)
         verify_link = self.auth_service.build_verify_link(token)
         await asyncio.to_thread(self.email_service.send_verification_email, email, verify_link)
+        self.logger.info(
+            "Sent verification email",
+            extra={"session_id": str(session.id)},
+        )
 
         reply_text = (
             "📧 We have sent a verification email.\n"
             "Please check your inbox and click the link to continue."
         )
-        self._save_and_reply(db, session, message, reply_text)
+        await self._save_and_reply(db, session, message, reply_text)
 
-    def _handle_pending_verification(self, db, session, message: IncomingMessage):
+    async def _handle_pending_verification(self, db, session, message: IncomingMessage):
+        self.logger.info(
+            "Pending verification reminder",
+            extra={"session_id": str(session.id)},
+        )
         reply_text = (
             "Your email verification is still pending.\n"
             "Please check your inbox and click the verification link to continue."
         )
-        self._save_and_reply(db, session, message, reply_text)
+        await self._save_and_reply(db, session, message, reply_text)
 
-    def _save_and_reply(self, db, session, message: IncomingMessage, text: str) -> None:
+    async def _save_and_reply(self, db, session, message: IncomingMessage, text: str) -> None:
         self.message_service.save_system_message(db, session.id, text)
-        self._reply(db, session, message, text)
+        await self._reply(db, session, message, text)
     
-    def _reply(self, db, session, message: IncomingMessage, text: str) -> None:
-        send_reply(message, text)
+    async def _reply(self, db, session, message: IncomingMessage, text: str) -> None:
+        await asyncio.to_thread(send_reply, message, text)
 
     def _is_valid_email(self, email: str) -> bool:
         return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None
@@ -169,6 +219,10 @@ class WebhookService:
 
         if missing:
             fields = ", ".join(missing)
+            self.logger.info(
+                "Draft missing fields",
+                extra={"session_id": str(session.id), "missing": fields},
+            )
             return f"I still need: {fields}. Please provide them."
 
         return (
@@ -186,10 +240,18 @@ class WebhookService:
         missing = [field for field in required if not draft.get(field)]
         if missing:
             fields = ", ".join(missing)
+            self.logger.info(
+                "Cannot create ticket, missing fields",
+                extra={"session_id": str(session.id), "missing": fields},
+            )
             return f"I still need: {fields}. Please provide them."
 
         user = db.get(User, session.user_id) if session.user_id else None
         if not user:
+            self.logger.warning(
+                "Session not linked to user",
+                extra={"session_id": str(session.id)},
+            )
             return "Your account is not linked to a user profile yet."
 
         try:
@@ -201,12 +263,20 @@ class WebhookService:
                 reporter_email=user.email,
             )
         except RuntimeError:
+            self.logger.exception(
+                "Jira create_ticket failed",
+                extra={"session_id": str(session.id)},
+            )
             return "Sorry, I could not create the ticket. Please try again."
 
         session.draft_ticket = None
         db.add(session)
 
         issue_key = result.get("issue_key")
+        self.logger.info(
+            "Ticket created",
+            extra={"session_id": str(session.id), "issue_key": issue_key},
+        )
         if issue_key and user.organization_id:
             link = TicketLink(
                 ticket_key=issue_key,
@@ -221,18 +291,34 @@ class WebhookService:
         ticket_key = action.get("ticket_key")
         comment = action.get("comment")
         if not ticket_key or not comment:
+            self.logger.info(
+                "Add comment missing data",
+                extra={"session_id": str(session.id)},
+            )
             return "Please include the ticket key and the comment text."
 
         user = db.get(User, session.user_id) if session.user_id else None
         if not user:
+            self.logger.warning(
+                "Session not linked to user",
+                extra={"session_id": str(session.id)},
+            )
             return "Your account is not linked to a user profile yet."
 
         try:
             detail = await self.jira_service.get_ticket_detail(ticket_key)
         except RuntimeError:
+            self.logger.exception(
+                "Jira get_ticket_detail failed",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "I could not find that ticket."
 
         if (detail.get("reporter_email") or "").lower() != user.email.lower():
+            self.logger.warning(
+                "User not reporter for ticket",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "You are not the reporter of this ticket."
 
         try:
@@ -242,25 +328,49 @@ class WebhookService:
                 author={"name": user.name, "email": user.email},
             )
         except RuntimeError:
+            self.logger.exception(
+                "Jira add_comment failed",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "Sorry, I could not add your comment."
 
+        self.logger.info(
+            "Comment added",
+            extra={"session_id": str(session.id), "ticket_key": ticket_key},
+        )
         return f"Comment added to {ticket_key}."
 
     async def _get_jira_ticket_status(self, db, session, action: dict) -> str:
         ticket_key = action.get("ticket_key")
         if not ticket_key:
+            self.logger.info(
+                "Get ticket status missing ticket_key",
+                extra={"session_id": str(session.id)},
+            )
             return "Please provide the ticket key."
 
         user = db.get(User, session.user_id) if session.user_id else None
         if not user:
+            self.logger.warning(
+                "Session not linked to user",
+                extra={"session_id": str(session.id)},
+            )
             return "Your account is not linked to a user profile yet."
 
         try:
             detail = await self.jira_service.get_ticket_detail(ticket_key)
         except RuntimeError:
+            self.logger.exception(
+                "Jira get_ticket_detail failed",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "I could not find that ticket."
 
         if (detail.get("reporter_email") or "").lower() != user.email.lower():
+            self.logger.warning(
+                "User not reporter for ticket",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "You are not the reporter of this ticket."
 
         return (
@@ -272,23 +382,43 @@ class WebhookService:
     async def _get_jira_comments(self, db, session, action: dict) -> str:
         ticket_key = action.get("ticket_key")
         if not ticket_key:
+            self.logger.info(
+                "Get comments missing ticket_key",
+                extra={"session_id": str(session.id)},
+            )
             return "Please provide the ticket key."
 
         user = db.get(User, session.user_id) if session.user_id else None
         if not user:
+            self.logger.warning(
+                "Session not linked to user",
+                extra={"session_id": str(session.id)},
+            )
             return "Your account is not linked to a user profile yet."
 
         try:
             detail = await self.jira_service.get_ticket_detail(ticket_key)
         except RuntimeError:
+            self.logger.exception(
+                "Jira get_ticket_detail failed",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "I could not find that ticket."
 
         if (detail.get("reporter_email") or "").lower() != user.email.lower():
+            self.logger.warning(
+                "User not reporter for ticket",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "You are not the reporter of this ticket."
 
         try:
             comments = await self.jira_service.get_public_comments(ticket_key, limit=5)
         except RuntimeError:
+            self.logger.exception(
+                "Jira get_public_comments failed",
+                extra={"session_id": str(session.id), "ticket_key": ticket_key},
+            )
             return "Sorry, I could not fetch comments."
 
         if not comments:
@@ -304,6 +434,10 @@ class WebhookService:
     async def _list_jira_tickets(self, db, session, action: dict) -> str:
         user = db.get(User, session.user_id) if session.user_id else None
         if not user:
+            self.logger.warning(
+                "Session not linked to user",
+                extra={"session_id": str(session.id)},
+            )
             return "Your account is not linked to a user profile yet."
 
         status_filter = (action.get("status") or "all").lower()
@@ -316,6 +450,10 @@ class WebhookService:
                 status_filter=status_filter,
             )
         except RuntimeError:
+            self.logger.exception(
+                "Jira list_tickets_by_reporter failed",
+                extra={"session_id": str(session.id)},
+            )
             return "Sorry, I could not list your tickets."
 
         if not tickets:

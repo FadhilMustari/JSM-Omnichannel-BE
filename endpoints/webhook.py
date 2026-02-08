@@ -2,10 +2,11 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import time
 from collections import deque
 from typing import Deque, Dict
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, Response
 from sqlalchemy.orm import Session
 from adapters.registry import ADAPTERS
 from core.config import settings
@@ -14,6 +15,7 @@ from services.webhook_service import WebhookService
 from core.database import get_db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _rate_limit_store: Dict[str, Deque[float]] = {}
 
@@ -28,14 +30,49 @@ async def webhook(
     if not adapter:
         raise HTTPException(status_code=400, detail="Unsupported platform")
     body = await request.body()
-    _verify_signature(platform, request, body)
+    try:
+        _verify_signature(platform, request, body)
+    except HTTPException:
+        logger.warning(
+            "Webhook signature verification failed",
+            extra={"platform": platform, "body_len": len(body)},
+        )
+        raise
     try:
         payload = json.loads(body)
     except json.JSONDecodeError:
+        logger.warning(
+            "Webhook invalid JSON payload",
+            extra={"platform": platform, "body_len": len(body)},
+        )
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
-    normalized_message = adapter.parse(payload)
+    try:
+        normalized_message = adapter.parse(payload)
+    except ValueError:
+        logger.info(
+            "Webhook ignored non-text event",
+            extra={"platform": platform},
+        )
+        return Response(status_code=204)
+    except KeyError:
+        logger.warning(
+            "Webhook invalid payload structure",
+            extra={"platform": platform},
+        )
+        raise HTTPException(status_code=400, detail="Invalid webhook payload")
     _enforce_rate_limit(f"{platform}:{normalized_message.external_user_id}")
-    await webhook_service.handle_incoming_message(db, normalized_message)
+    try:
+        await webhook_service.handle_incoming_message(db, normalized_message)
+    except Exception:
+        logger.exception(
+            "Webhook handling failed",
+            extra={
+                "platform": platform,
+                "external_user_id": normalized_message.external_user_id,
+                "message_id": normalized_message.message_id,
+            },
+        )
+        raise
     return {"status": "ok"}
 
 def _enforce_rate_limit(key: str) -> None:
@@ -94,6 +131,4 @@ def _verify_signature(platform: str, request: Request, body: bytes) -> None:
         _verify_line(request, body)
     elif platform == "whatsapp":
         _verify_whatsapp(request, body)
-
-
 
