@@ -6,6 +6,8 @@ from pydantic import Field
 class Settings(BaseSettings):
     environment: str = Field("development", alias="ENVIRONMENT")
     port: int = Field(8000, alias="PORT")
+    log_level: str = Field("INFO", alias="LOG_LEVEL")
+    gcp_project_id: Optional[str] = Field(None, alias="GCP_PROJECT_ID")
 
     base_url: Optional[str] = Field(None, alias="BASE_URL")
     
