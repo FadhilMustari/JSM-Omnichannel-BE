@@ -102,13 +102,21 @@ class WebhookService:
             history=history,
         )
         intent = (action.get("intent") or "general").lower()
+        patch = action.get("patch") or {}
+        if intent not in {"update_draft_ticket", "revise_draft_ticket"}:
+            patch = self._fallback_patch_from_text(
+                message.text,
+                session.draft_ticket or {},
+                patch,
+            )
+            if patch:
+                intent = "update_draft_ticket"
         self.logger.info(
             "Parsed Jira action",
             extra={"session_id": str(session.id), "intent": intent},
         )
 
         if intent in {"update_draft_ticket", "revise_draft_ticket"}:
-            patch = action.get("patch") or {}
             reply = self._update_draft(db, session, patch)
         elif intent == "confirm_create_ticket":
             reply = await self._confirm_create_ticket(db, session)
@@ -189,6 +197,47 @@ class WebhookService:
 
     def _is_valid_email(self, email: str) -> bool:
         return re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email) is not None
+
+    def _fallback_patch_from_text(self, text: str, draft: dict, existing_patch: dict) -> dict:
+        if existing_patch:
+            return existing_patch
+
+        patch: dict[str, str] = {}
+        normalized = text.strip()
+        if not normalized:
+            return patch
+
+        lowered = normalized.lower()
+
+        if not draft.get("priority"):
+            if any(key in lowered for key in ["urgent", "high", "p1", "p2", "p3", "low", "medium"]):
+                for key, value in [
+                    ("urgent", "urgent"),
+                    ("high", "high"),
+                    ("p1", "high"),
+                    ("p2", "medium"),
+                    ("p3", "low"),
+                    ("medium", "medium"),
+                    ("low", "low"),
+                ]:
+                    if key in lowered:
+                        patch["priority"] = value
+                        break
+
+        if not draft.get("start_date"):
+            date_match = re.search(r"\b\d{4}-\d{2}-\d{2}\b", normalized)
+            if not date_match:
+                date_match = re.search(r"\b\d{2}/\d{2}/\d{4}\b", normalized)
+            if date_match:
+                patch["start_date"] = date_match.group(0)
+
+        if not patch:
+            if not draft.get("summary"):
+                patch["summary"] = normalized
+            elif not draft.get("description"):
+                patch["description"] = normalized
+
+        return patch
 
     def _build_ai_history(self, db, session_id, exclude_message_id, limit: int = 8) -> list[dict]:
         messages = self.message_service.get_recent_messages(db, session_id, limit=limit + 1)
