@@ -198,7 +198,7 @@ class WebhookService:
         for message in messages:
             if message.id == exclude_message_id:
                 continue
-            role = "assistant" if message.role == "system" else "user"
+            role = "assistant" if message.role in {"system", "agent"} else "user"
             if message.content:
                 history.append({"role": role, "content": message.content})
             if len(history) >= limit:

@@ -23,7 +23,7 @@ class Organization(Base):
     domain = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(
         DateTime(timezone=True),
-        server_default=func.now(),
+        server_default=func.clock_timestamp(),
         nullable=False,
     )
 

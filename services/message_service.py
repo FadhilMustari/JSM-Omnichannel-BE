@@ -23,7 +23,7 @@ class MessageService:
         return message
 
     def save_system_message(self, db: Session, session_id, text: str) -> Message:
-        message = Message(session_id=session_id, role="system", content=text)
+        message = Message(session_id=session_id, role="agent", content=text)
         db.add(message)
         db.flush()
         return message
