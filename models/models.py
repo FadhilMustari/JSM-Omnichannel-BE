@@ -155,37 +155,6 @@ class TicketLink(Base):
     channel_session = relationship("ChannelSession")
     organization = relationship("Organization")
 
-class OutboxStatus(str, enum.Enum):
-    pending = "pending"
-    sent = "sent"
-    failed = "failed"
-
-class OutboxMessage(Base):
-    __tablename__ = "outbox_messages"
-
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("channel_sessions.id"),
-        nullable=False,
-        index=True,
-    )
-    platform = Column(String, nullable=False)
-    external_user_id = Column(String, nullable=False)
-    payload = Column(Text, nullable=False)
-    status = Column(String, nullable=False, default=OutboxStatus.pending.value, index=True)
-    attempts = Column(Integer, nullable=False, default=0)
-    last_error = Column(Text, nullable=True)
-    next_retry_at = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(
-        DateTime(timezone=True),
-        server_default=func.now(),
-        nullable=False,
-    )
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-
-    channel_session = relationship("ChannelSession")
-    
 class EmailVerification(Base):
     __tablename__ = "email_verifications"
 
