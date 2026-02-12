@@ -24,6 +24,8 @@ class TelegramAdapter(BaseAdapter):
                 "chat_id": message.external_user_id,
                 "text": reply_text,
             }
+            if any(tag in reply_text for tag in ("<b>", "<i>", "<code>", "<pre>", "<a ")):
+                payload["parse_mode"] = "HTML"
             logger = logging.getLogger(__name__)
             start = time.perf_counter()
             try:

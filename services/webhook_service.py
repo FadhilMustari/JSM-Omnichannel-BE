@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import html
 import re
 from datetime import datetime, timezone
 
@@ -49,6 +50,18 @@ class WebhookService:
             message.external_user_id,
         )
         self._enforce_auth_expiry(db, session)
+        self._sync_auth_state(db, session)
+        self.logger.info(
+            "Session auth status",
+            extra={
+                "session_id": str(session.id),
+                "platform": session.platform,
+                "external_user_id": session.external_user_id,
+                "auth_status": session.auth_status,
+                "user_id": str(session.user_id) if session.user_id else None,
+                "auth_expires_at": session.auth_expires_at.isoformat() if session.auth_expires_at else None,
+            },
+        )
         if self.message_service.is_duplicate(db, session.id, message.message_id):
             self.logger.info(
                 "Duplicate message ignored",
@@ -77,6 +90,19 @@ class WebhookService:
             else:
                 blocked = self._require_authenticated(session)
                 reply_text = blocked or await self._confirm_create_ticket(db, session)
+            self.message_service.save_system_message(db, session.id, reply_text)
+            await self._reply(db, session, message, reply_text)
+            db.commit()
+            return
+
+        if self._is_list_tickets_message(message.text):
+            blocked = self._require_authenticated(session)
+            status_filter = self._extract_status_filter(message.text)
+            reply_text = blocked or await self._list_jira_tickets(
+                db,
+                session,
+                {"status": status_filter},
+            )
             self.message_service.save_system_message(db, session.id, reply_text)
             await self._reply(db, session, message, reply_text)
             db.commit()
@@ -111,6 +137,40 @@ class WebhookService:
             return True
         return bool(re.search(r"\b(reset|start\s*over|batal)\b", normalized))
 
+    def _is_list_tickets_message(self, text: str) -> bool:
+        normalized = (text or "").strip().lower()
+        if not normalized:
+            return False
+        if "ticket" not in normalized and "tiket" not in normalized:
+            return False
+        return bool(
+            re.search(
+                r"\b(list|show|lihat|daftar|semua|all|cek|check)\b",
+                normalized,
+            )
+        )
+
+    def _extract_status_filter(self, text: str) -> str:
+        normalized = (text or "").strip().lower()
+        if re.search(r"\b(open|opened|ongoing|aktif|progress)\b", normalized):
+            return "open"
+        if re.search(r"\b(closed|done|resolved|selesai|tutup)\b", normalized):
+            return "closed"
+        return "all"
+
+    def _sanitize_plain_text(self, text: str, platform: str | None = None) -> str:
+        if not text:
+            return text
+        sanitized = text
+        sanitized = re.sub(r"\*\*(.*?)\*\*", r"\1", sanitized)
+        sanitized = re.sub(r"__(.*?)__", r"\1", sanitized)
+        if platform != "telegram":
+            sanitized = re.sub(r"<[^>]+>", "", sanitized)
+        sanitized = sanitized.replace("`", "")
+        sanitized = sanitized.replace("*", "")
+        sanitized = sanitized.replace("_", "")
+        return sanitized.strip()
+
     def _enforce_auth_expiry(self, db, session) -> None:
         if not session.auth_expires_at:
             return
@@ -122,6 +182,15 @@ class WebhookService:
             session.user_id = None
             session.auth_expires_at = None
             db.add(session)
+
+    def _sync_auth_state(self, db, session) -> None:
+        if session.user_id and session.auth_expires_at:
+            expires_at = session.auth_expires_at
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at > datetime.now(timezone.utc) and session.auth_status != "authenticated":
+                session.auth_status = "authenticated"
+                db.add(session)
 
     def _build_ai_history(self, db, session_id, exclude_message_id, limit: int = 8) -> list[dict]:
         messages = self.message_service.get_recent_messages(db, session_id, limit=limit + 1)
@@ -225,12 +294,19 @@ class WebhookService:
 
         instructions = (
             "You are the orchestrator for an omnichannel customer support assistant.\n"
-            "Decide whether to call tools or reply directly.\n\n"
+            "Decide whether to call tools or reply directly.\n"
+            "Be natural, friendly, and concise. Avoid sounding robotic.\n"
+            "Use short paragraphs and ask one clear question at a time when needed.\n"
+            "Acknowledge what the user said before asking for missing info.\n"
+            "If the user is frustrated, respond empathetically and keep it brief.\n\n"
             "RULES:\n"
             "- Detect the language of the user automatically.\n"
             "- Always respond in the same language as the current user message.\n"
             "- Support any language.\n"
             "- If the user mixes languages, respond naturally following their style.\n"
+            "- Do not use Markdown formatting in responses.\n"
+            "- Keep responses concise with short lines.\n"
+            "- When listing tickets, output only the formatted list without intro or closing lines.\n"
             "- If auth_status is pending_verification: call send_verification_reminder and do not call Jira tools.\n"
             "- If auth_status is anonymous and the user requests Jira/internal/customer-specific data: "
             "ask for a company email, or call start_email_verification if the email is provided.\n"
@@ -257,6 +333,19 @@ class WebhookService:
             "MODE E: LIST TICKETS\n"
             "- Trigger: user asks to list tickets.\n"
             "- Action: call list_jira_tickets(status) where status is open|closed|all (default all).\n"
+            "\n"
+            "STYLE EXAMPLES:\n"
+            "User: I want to create a ticket, the app crashes on login.\n"
+            "Assistant: Got it. I can help with that. What priority should I use (P1-P4)?\n"
+            "\n"
+            "User: What's the status of SUPPORT-123?\n"
+            "Assistant: Sure, I'll check that for you.\n"
+            "\n"
+            "User: Tolong cek status tiket SUPPORT-456.\n"
+            "Assistant: Baik, saya cek dulu statusnya ya.\n"
+            "\n"
+            "User: I already gave my email.\n"
+            "Assistant: Thanks. I've sent a verification reminder. Let me know once it's verified.\n"
         )
 
         @function_tool
@@ -426,6 +515,7 @@ class WebhookService:
         try:
             result = await Runner.run(agent, input=prompt)
             output = (result.final_output or "").strip()
+            output = self._sanitize_plain_text(output, session.platform)
             if not output:
                 return "Sorry, I could not process that."
             return output
@@ -459,12 +549,25 @@ class WebhookService:
             )
             return self._prompt_next_missing_field(draft)
 
+        summary = draft.get("summary") or "-"
+        description = draft.get("description") or "-"
+        priority = draft.get("priority") or "-"
+        start_date = draft.get("start_date") or "-"
+        if session.platform == "telegram":
+            return (
+                "<b>Ticket draft</b>\n"
+                f"<b>Summary</b>     : {html.escape(summary)}\n"
+                f"<b>Description</b> : {html.escape(description)}\n"
+                f"<b>Priority</b>    : {html.escape(priority)}\n"
+                f"<b>Start Date</b>  : {html.escape(start_date)}\n\n"
+                "Reply with yes/ok/submit to create the ticket, or tell me what to change."
+            )
         return (
             "Here is your ticket draft:\n"
-            f"Summary: {draft.get('summary')}\n"
-            f"Description: {draft.get('description')}\n"
-            f"Priority: {draft.get('priority')}\n"
-            f"Start Date: {draft.get('start_date')}\n\n"
+            f"Summary     : {summary}\n"
+            f"Description : {description}\n"
+            f"Priority    : {priority}\n"
+            f"Start Date  : {start_date}\n\n"
             "Reply with yes/ok/submit to create the ticket, or tell me what to change."
         )
 
@@ -527,6 +630,8 @@ class WebhookService:
                 platform=session.platform,
             )
             db.add(link)
+        if session.platform == "telegram":
+            return f"✅ <b>Ticket created</b>: {html.escape(issue_key or '-')}"
         return f"Ticket created: {issue_key}"
 
     async def _add_jira_comment(self, db, session, action: dict) -> str:
@@ -615,10 +720,22 @@ class WebhookService:
             )
             return "You are not the reporter of this ticket."
 
+        assignee = detail.get("assignee") or "Unassigned"
+        priority = detail.get("priority") or "-"
+        status = detail.get("status") or "Unknown"
+        ticket_key_text = detail.get("ticket_key") or ticket_key
+        if session.platform == "telegram":
+            return (
+                f"<b>{html.escape(ticket_key_text)}</b>\n"
+                f"<b>Status</b>   : {html.escape(status)}\n"
+                f"<b>Assignee</b> : {html.escape(assignee)}\n"
+                f"<b>Priority</b> : {html.escape(priority)}"
+            )
         return (
-            f"{ticket_key} status: {detail.get('status')}\n"
-            f"Assignee: {detail.get('assignee') or 'Unassigned'}\n"
-            f"Priority: {detail.get('priority')}"
+            f"{ticket_key_text}\n"
+            f"Status   : {status}\n"
+            f"Assignee : {assignee}\n"
+            f"Priority : {priority}"
         )
 
     async def _get_jira_comments(self, db, session, action: dict) -> str:
@@ -670,8 +787,14 @@ class WebhookService:
         for comment in comments:
             author = comment.get("author") or "Unknown"
             body = comment.get("body") or ""
-            formatted.append(f"- {author}: {body}")
-        return "Latest comments:\n" + "\n".join(formatted)
+            if session.platform == "telegram":
+                formatted.append(
+                    f"- <b>{html.escape(author)}</b>: {html.escape(body)}"
+                )
+            else:
+                formatted.append(f"- {author}: {body}")
+        header = "<b>Latest comments</b>:" if session.platform == "telegram" else "Latest comments:"
+        return header + "\n" + "\n".join(formatted)
 
     async def _list_jira_tickets(self, db, session, action: dict) -> str:
         user = db.get(User, session.user_id) if session.user_id else None
@@ -714,19 +837,23 @@ class WebhookService:
             status = ticket.get("status") or "Unknown"
             priority = ticket.get("priority") or "-"
             summary = ticket.get("summary") or "-"
-            lines.append(
-                f"{status_emoji(status)} {ticket.get('ticket_key')}\n"
-                f"{summary}\n"
-                f"Status   : {status}\n"
-                f"Priority : {priority}"
-            )
+            ticket_key = ticket.get("ticket_key") or "-"
+            if session.platform == "telegram":
+                lines.append(
+                    f"{status_emoji(status)} <b>{html.escape(ticket_key)}</b>\n"
+                    f"<b>Summary</b>  : {html.escape(summary)}\n"
+                    f"<b>Status</b>   : {html.escape(status)}\n"
+                    f"<b>Priority</b> : {html.escape(priority)}"
+                )
+            else:
+                lines.append(
+                    f"{status_emoji(status)} {ticket_key}\n"
+                    f"Summary  : {summary}\n"
+                    f"Status   : {status}\n"
+                    f"Priority : {priority}"
+                )
 
-        header = (
-            "📋 Here’s your ticket:"
-            if len(tickets) == 1
-            else f"📋 Here are your tickets: ({len(tickets)})"
-        )
-        return header + "\n\n" + "\n\n".join(lines)
+        return "\n\n".join(lines)
 
     def _reset_draft(self, db, session) -> str:
         if not session.draft_ticket:
