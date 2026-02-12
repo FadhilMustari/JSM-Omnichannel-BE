@@ -10,6 +10,7 @@ from core.database import get_db
 from models.models import ChannelSession, Message, Organization, TicketLink, User
 from schemas.admin import AdminMessageCreate
 from schemas.message import IncomingMessage
+from services.message_service import MessageService
 
 router = APIRouter(prefix="/api", tags=["conversations"])
 
@@ -207,12 +208,7 @@ def send_admin_message(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    message = Message(
-        session_id=session.id,
-        role="employee",
-        content=body.text,
-    )
-    db.add(message)
+    MessageService().save_employee_message(db, session.id, body.text)
     db.commit()
     outgoing = IncomingMessage(
         platform=session.platform,

@@ -1,10 +1,20 @@
 from typing import Optional
+import html
+import re
 
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from models.models import Message
 
 class MessageService:
+    def _sanitize_for_storage(self, text: str) -> str:
+        if not text:
+            return text
+        sanitized = re.sub(r"(?i)<br\s*/?>", "\n", text)
+        sanitized = re.sub(r"<[^>]+>", "", sanitized)
+        sanitized = html.unescape(sanitized)
+        return sanitized.strip()
+
     def save_user_message(
         self,
         db: Session,
@@ -23,7 +33,21 @@ class MessageService:
         return message
 
     def save_system_message(self, db: Session, session_id, text: str) -> Message:
-        message = Message(session_id=session_id, role="agent", content=text)
+        message = Message(
+            session_id=session_id,
+            role="agent",
+            content=self._sanitize_for_storage(text),
+        )
+        db.add(message)
+        db.flush()
+        return message
+
+    def save_employee_message(self, db: Session, session_id, text: str) -> Message:
+        message = Message(
+            session_id=session_id,
+            role="employee",
+            content=self._sanitize_for_storage(text),
+        )
         db.add(message)
         db.flush()
         return message
