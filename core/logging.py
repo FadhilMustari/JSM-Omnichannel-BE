@@ -81,17 +81,28 @@ def _safe_json_value(value):
 def setup_logging(level: str = "INFO", project_id: str | None = None) -> None:
     global _project_id
     _project_id = project_id
+    env = (os.getenv("ENVIRONMENT") or "development").lower()
+    is_dev = env in {"dev", "development", "local"}
+    formatter_name = "dev" if is_dev else "json"
+    formatter_config = {
+        "dev": {
+            "format": "%(asctime)s %(levelname)s %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+        "json": {"()": "core.logging.JsonFormatter"},
+    }
     config = {
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "json": {"()": "core.logging.JsonFormatter"},
+            "dev": formatter_config["dev"],
+            "json": formatter_config["json"],
         },
         "handlers": {
             "stdout": {
                 "class": "logging.StreamHandler",
                 "stream": "ext://sys.stdout",
-                "formatter": "json",
+                "formatter": formatter_name,
             }
         },
         "root": {"level": level, "handlers": ["stdout"]},

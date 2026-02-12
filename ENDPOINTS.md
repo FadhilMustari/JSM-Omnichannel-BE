@@ -69,6 +69,26 @@ Example response:
 {"status":"ok"}
 ```
 
+### `POST /webhook/jira`
+- Purpose: Receive Jira Cloud webhook events (comment_created).
+Auth: optional secret header if `JIRA_WEBHOOK_SECRET` is set
+- Required headers (when configured):
+  - `X-Atlassian-Webhook-Secret` (or `X-Jira-Webhook-Secret`)
+- Request body:
+  - Jira webhook JSON payload.
+- Behavior:
+  - Only `comment_created` is processed; other events return `204`.
+  - Routes comment to the linked session via `ticket_links`.
+- Success response:
+  - `{ "status": "ok" }`
+Example:
+```bash
+curl -s -X POST "http://localhost:8000/webhook/jira" \
+  -H "Content-Type: application/json" \
+  -H "X-Atlassian-Webhook-Secret: YOUR_SECRET" \
+  -d '{"webhookEvent":"comment_created","issue":{"key":"SUP-1"},"comment":{"body":"Hi"}}'
+```
+
 ## Admin (`/api/admin`)
 ### `GET /api/admin/me`
 - Purpose: Return admin context attached to request.

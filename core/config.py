@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     jira_email: Optional[str] = Field(None, alias="JIRA_EMAIL")
     jira_token: Optional[str] = Field(None, alias="JIRA_TOKEN")
     jira_service_desk_id: Optional[int] = Field(None, alias="JIRA_SERVICE_DESK_ID")
+    jira_webhook_secret: Optional[str] = Field(None, alias="JIRA_WEBHOOK_SECRET")
     
     smtp_host: Optional[str] = Field(None, alias="SMTP_HOST")
     smtp_port: Optional[int] = Field(None, alias="SMTP_PORT")
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     line_channel_access_token: Optional[str] = Field(None, alias="LINE_CHANNEL_ACCESS_TOKEN")
     line_channel_secret: Optional[str] = Field(None, alias="LINE_CHANNEL_SECRET")
     
+    openai_api_key: Optional[str] = Field(None, alias="OPENAI_API_KEY")
     llm_api_key: Optional[str] = Field(None, alias="LLM_API_KEY")
     llm_base_url: str = Field("https://api.openai.com/v1", alias="LLM_BASE_URL")
     llm_model: str = Field("gpt-4o-mini", alias="LLM_MODEL")
@@ -41,6 +43,7 @@ class Settings(BaseSettings):
 
     rate_limit_window_seconds: int = Field(60, alias="RATE_LIMIT_WINDOW_SECONDS")
     rate_limit_max: int = Field(30, alias="RATE_LIMIT_MAX")
+    auth_ttl_days: int = Field(10, alias="AUTH_TTL_DAYS")
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),

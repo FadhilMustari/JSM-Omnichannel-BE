@@ -1,16 +1,20 @@
 import logging
 import time
 from fastapi import FastAPI, Request
+from dotenv import load_dotenv
 from endpoints.webhook import router as webhook_router
+from endpoints.jira_webhook import router as jira_webhook_router
 from endpoints.admin import router as admin_router
 from endpoints.auth import router as auth_router
 from core.http_client import init_async_client, close_async_client
 from core.config import settings
 from core.logging import setup_logging, set_trace_context, clear_trace_context
 
+load_dotenv()
 setup_logging(settings.log_level, settings.gcp_project_id)
 app = FastAPI()
 
+app.include_router(jira_webhook_router)
 app.include_router(webhook_router)
 app.include_router(auth_router)
 app.include_router(admin_router)

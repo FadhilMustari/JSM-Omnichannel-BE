@@ -101,6 +101,7 @@ class AuthService:
 
         session.user_id = user.id
         session.auth_status = AuthStatus.authenticated.value
+        session.auth_expires_at = datetime.now(timezone.utc) + timedelta(days=settings.auth_ttl_days)
 
         db.delete(verification)
         db.add(session)

@@ -1,3 +1,5 @@
+import logging
+import time
 import requests
 from core.config import settings
 from adapters.base import BaseAdapter
@@ -22,4 +24,23 @@ class TelegramAdapter(BaseAdapter):
                 "chat_id": message.external_user_id,
                 "text": reply_text,
             }
-            requests.post(url, json=payload, timeout=10)
+            logger = logging.getLogger(__name__)
+            start = time.perf_counter()
+            try:
+                response = requests.post(url, json=payload, timeout=10)
+                elapsed = time.perf_counter() - start
+                logger.info(
+                    "Telegram send_reply completed",
+                    extra={
+                        "status_code": response.status_code,
+                        "elapsed_s": round(elapsed, 3),
+                    },
+                )
+                response.raise_for_status()
+            except requests.exceptions.RequestException:
+                elapsed = time.perf_counter() - start
+                logger.exception(
+                    "Telegram send_reply failed",
+                    extra={"elapsed_s": round(elapsed, 3)},
+                )
+                raise

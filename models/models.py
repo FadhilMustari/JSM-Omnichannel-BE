@@ -80,6 +80,7 @@ class ChannelSession(Base):
         nullable=False,
         default=AuthStatus.anonymous.value,
     )
+    auth_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),

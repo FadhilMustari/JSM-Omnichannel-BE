@@ -1,5 +1,4 @@
 from fastapi import Depends
-from services.ai_service import AIService
 from services.auth_service import AuthService
 from services.email_service import EmailService
 from services.jira_service import JiraService
@@ -12,9 +11,6 @@ def get_session_service() -> SessionService:
 
 def get_message_service() -> MessageService:
     return MessageService()
-
-def get_ai_service() -> AIService:
-    return AIService()
 
 def get_auth_service() -> AuthService:
     return AuthService()
@@ -30,7 +26,6 @@ def get_webhook_service(
     message_service: MessageService = Depends(get_message_service),
     auth_service: AuthService = Depends(get_auth_service),
     email_service: EmailService = Depends(get_email_service),
-    ai_service: AIService = Depends(get_ai_service),
     jira_service: JiraService = Depends(get_jira_service),
 ) -> WebhookService:
     return WebhookService(
@@ -38,6 +33,5 @@ def get_webhook_service(
         message_service=message_service,
         auth_service=auth_service,
         email_service=email_service,
-        ai_service=ai_service,
         jira_service=jira_service,
     )
