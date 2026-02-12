@@ -209,7 +209,7 @@ def send_admin_message(
 
     message = Message(
         session_id=session.id,
-        role="agent",
+        role="employee",
         content=body.text,
     )
     db.add(message)
