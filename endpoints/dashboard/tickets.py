@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc, or_
@@ -6,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from core.config import settings
 from core.database import get_db
-from models.models import ChannelSession, JiraTicket, Organization, TicketLink, User
+from models.models import ChannelSession, JiraTicket, Message, Organization, TicketLink, User
 from schemas.admin import AdminCommentCreate
 from services.jira_service import JiraService
 from dependencies.services import get_jira_service
@@ -128,6 +129,46 @@ async def get_ticket(
         "updated_at": detail.get("updated_at"),
         "user": {"email": user.email, "jsm_account_id": user.jsm_account_id} if user else None,
     }
+
+
+@router.get("/tickets/{ticket_key}/messages")
+def list_ticket_messages(
+    ticket_key: str,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    link = db.query(TicketLink).filter(TicketLink.ticket_key == ticket_key).first()
+    if not link:
+        raise HTTPException(status_code=404, detail="Ticket not linked")
+
+    session = db.get(ChannelSession, link.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    messages = (
+        db.query(Message)
+        .filter(Message.session_id == session.id)
+        .order_by(desc(Message.created_at), desc(Message.id))
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+
+    session.last_read_at = datetime.now(timezone.utc)
+    db.add(session)
+    db.commit()
+
+    return [
+        {
+            "message_id": str(message.id),
+            "role": message.role,
+            "text": message.content,
+            "created_at": message.created_at,
+            "platform_message_id": message.external_message_id,
+        }
+        for message in reversed(messages)
+    ]
 
 
 @router.post("/tickets/{ticket_key}/comment")
