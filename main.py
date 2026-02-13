@@ -9,6 +9,7 @@ from endpoints.dashboard.conversations import router as conversations_router
 from endpoints.dashboard.tickets import router as tickets_router
 from endpoints.dashboard.organizations import router as organizations_router
 from endpoints.dashboard.stats import router as stats_router
+from endpoints.broadcast import router as broadcast_router
 from endpoints.sync import router as sync_router
 from core.http_client import init_async_client, close_async_client
 from core.config import settings
@@ -28,6 +29,7 @@ app.include_router(tickets_router)
 app.include_router(organizations_router)
 app.include_router(stats_router)
 app.include_router(sync_router)
+app.include_router(broadcast_router)
 
 http_logger = logging.getLogger("http.request")
 sync_task: asyncio.Task | None = None

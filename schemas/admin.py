@@ -11,6 +11,11 @@ class AdminCommentCreate(BaseModel):
     text: str
 
 
+class BroadcastCreate(BaseModel):
+    message: str
+    platform: Optional[str] = None
+
+
 class OrganizationCreate(BaseModel):
     jsm_id: str
     jsm_uuid: Optional[str] = None
