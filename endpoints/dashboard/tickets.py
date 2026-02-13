@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from core.config import settings
 from core.database import get_db
-from models.models import ChannelSession, Organization, TicketLink, User
+from models.models import ChannelSession, JiraTicket, Organization, TicketLink, User
 from schemas.admin import AdminCommentCreate
 from services.jira_service import JiraService
 from dependencies.services import get_jira_service
@@ -23,11 +23,11 @@ async def list_tickets(
     limit: int = 20,
     offset: int = 0,
     db: Session = Depends(get_db),
-    jira_service: JiraService = Depends(get_jira_service),
 ) -> list[dict]:
     query = (
-        db.query(TicketLink, User, Organization, ChannelSession)
-        .join(ChannelSession, TicketLink.session_id == ChannelSession.id)
+        db.query(JiraTicket, TicketLink, User, Organization, ChannelSession)
+        .outerjoin(TicketLink, JiraTicket.ticket_key == TicketLink.ticket_key)
+        .outerjoin(ChannelSession, TicketLink.session_id == ChannelSession.id)
         .outerjoin(User, ChannelSession.user_id == User.id)
         .outerjoin(Organization, TicketLink.organization_id == Organization.id)
     )
@@ -40,52 +40,42 @@ async def list_tickets(
         like = f"%{q}%"
         query = query.filter(
             or_(
-                TicketLink.ticket_key.ilike(like),
+                JiraTicket.ticket_key.ilike(like),
+                JiraTicket.summary.ilike(like),
                 User.email.ilike(like),
             )
         )
 
     rows = (
-        query.order_by(desc(TicketLink.created_at))
+        query.order_by(desc(JiraTicket.created_at))
         .limit(limit)
         .offset(offset)
         .all()
     )
 
-    ticket_keys = [row[0].ticket_key for row in rows]
-    issues_list = await jira_service.get_issues_by_keys(ticket_keys)
-    issues = {item["ticket_key"]: item for item in issues_list}
-
     results = []
-    for link, user, org, session in rows:
-        issue = issues.get(link.ticket_key, {})
-        issue_status = (issue.get("status") or "").lower()
+    for ticket, link, user, org, session in rows:
+        issue_status = (ticket.status or "").lower()
         if status == "open" and "done" in issue_status:
             continue
         if status == "closed" and "done" not in issue_status:
             continue
 
-        summary = issue.get("summary")
-        if q and summary and q.lower() not in summary.lower():
-            if link.ticket_key.lower().find(q.lower()) == -1 and (
-                user and user.email and q.lower() not in user.email.lower()
-            ):
-                continue
-
         results.append(
             {
-                "ticket_key": link.ticket_key,
-                "summary": issue.get("summary"),
-                "status": issue.get("status"),
-                "priority": issue.get("priority"),
-                "channel": link.platform,
+                "ticket_key": ticket.ticket_key,
+                "summary": ticket.summary,
+                "status": ticket.status,
+                "priority": ticket.priority,
+                "channel": link.platform if link else None,
                 "user": {"email": user.email, "jsm_account_id": user.jsm_account_id} if user else None,
                 "organization": (
                     {"id": str(org.id), "name": org.name} if org else None
                 ),
                 "session_id": str(session.id) if session else None,
-                "created_at": issue.get("created_at"),
-                "updated_at": issue.get("updated_at"),
+                "created_at": ticket.created_at,
+                "updated_at": ticket.updated_at,
+                "source": "platform" if link else "portal",
             }
         )
     return results

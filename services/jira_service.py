@@ -348,32 +348,23 @@ class JiraService:
         self,
         project: str = PROJECT_KEY,
         start_at: int = 0,
-        max_results: int = 100,
+        max_results: int = 50,
     ) -> Dict[str, Any]:
-        jql = f"project = {project} ORDER BY created ASC"
+        jql = f"project={project} ORDER BY created DESC"
         url = self._url("/rest/api/3/search/jql")
-        payload = {
+        params = {
             "jql": jql,
-            "fields": [
-                "summary",
-                "description",
-                "status",
-                "assignee",
-                "priority",
-                "reporter",
-                "created",
-                "updated",
-            ],
+            "fields": "summary,status,assignee,reporter,created,priority",
             "startAt": start_at,
             "maxResults": max_results,
         }
         client = get_async_client()
         try:
-            resp = await client.post(
+            resp = await client.get(
                 url,
                 headers=self._headers(),
                 auth=self.auth,
-                json=payload,
+                params=params,
                 timeout=30.0,
             )
             resp.raise_for_status()
