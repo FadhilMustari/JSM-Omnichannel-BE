@@ -1,3 +1,4 @@
+import json
 import logging
 from typing import Any
 
@@ -5,7 +6,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.sql import func
 
-from models.models import Organization, User
+from core.jira_constants import PROJECT_KEY
+from models.models import JiraTicket, Organization, User
 from services.jira_service import JiraService
 
 
@@ -123,4 +125,75 @@ class JiraSyncService:
             "users_active": len(user_account_ids),
         }
         self.logger.info("JSM sync completed", extra=summary)
+        return summary
+
+    async def sync_jira_tickets(self, db: Session, project_key: str = PROJECT_KEY) -> dict[str, Any]:
+        self.logger.info("Jira ticket sync started", extra={"project_key": project_key})
+
+        start_at = 0
+        max_results = 100
+        total_seen = 0
+        while True:
+            page = await self.jira_service.list_all_tickets(
+                project=project_key,
+                start_at=start_at,
+                max_results=max_results,
+            )
+            issues = page.get("issues", [])
+            total = int(page.get("total") or 0)
+            if not issues:
+                break
+
+            for issue in issues:
+                ticket_key = issue.get("key")
+                if not ticket_key:
+                    continue
+                fields = issue.get("fields", {}) or {}
+                assignee = fields.get("assignee") or {}
+                priority = fields.get("priority") or {}
+                status = fields.get("status") or {}
+                reporter = fields.get("reporter") or {}
+                description = fields.get("description")
+                if description is not None and not isinstance(description, str):
+                    description = json.dumps(description, ensure_ascii=True)
+
+                stmt = insert(JiraTicket).values(
+                    ticket_key=ticket_key,
+                    project_key=project_key,
+                    summary=fields.get("summary"),
+                    description=description,
+                    status=status.get("name"),
+                    priority=priority.get("name"),
+                    assignee=assignee.get("displayName"),
+                    reporter_email=reporter.get("emailAddress"),
+                    created_at=fields.get("created"),
+                    updated_at=fields.get("updated"),
+                )
+                update = {
+                    "project_key": stmt.excluded.project_key,
+                    "summary": stmt.excluded.summary,
+                    "description": stmt.excluded.description,
+                    "status": stmt.excluded.status,
+                    "priority": stmt.excluded.priority,
+                    "assignee": stmt.excluded.assignee,
+                    "reporter_email": stmt.excluded.reporter_email,
+                    "created_at": stmt.excluded.created_at,
+                    "updated_at": stmt.excluded.updated_at,
+                    "last_synced_at": func.now(),
+                }
+                db.execute(
+                    stmt.on_conflict_do_update(
+                        index_elements=["ticket_key"],
+                        set_=update,
+                    )
+                )
+
+            total_seen += len(issues)
+            start_at = int(page.get("startAt", start_at)) + int(page.get("maxResults", max_results))
+            if start_at >= total:
+                break
+
+        db.commit()
+        summary = {"tickets_seen": total_seen, "project_key": project_key}
+        self.logger.info("Jira ticket sync completed", extra=summary)
         return summary

@@ -17,3 +17,13 @@ async def sync_jsm(
     sync_service = JiraSyncService(jira_service)
     result = await sync_service.sync_jira_organizations_and_users(db)
     return {"status": "ok", "result": result}
+
+
+@router.post("/tickets")
+async def sync_tickets(
+    db: Session = Depends(get_db),
+    jira_service: JiraService = Depends(get_jira_service),
+) -> dict:
+    sync_service = JiraSyncService(jira_service)
+    result = await sync_service.sync_jira_tickets(db)
+    return {"status": "ok", "result": result}

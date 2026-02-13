@@ -156,6 +156,26 @@ class TicketLink(Base):
     channel_session = relationship("ChannelSession")
     organization = relationship("Organization")
 
+class JiraTicket(Base):
+    __tablename__ = "jira_tickets"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticket_key = Column(String, nullable=False, unique=True, index=True)
+    project_key = Column(String, nullable=True, index=True)
+    summary = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
+    status = Column(String, nullable=True)
+    priority = Column(String, nullable=True)
+    assignee = Column(String, nullable=True)
+    reporter_email = Column(String, nullable=True)
+    created_at = Column(String, nullable=True)
+    updated_at = Column(String, nullable=True)
+    last_synced_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
 class EmailVerification(Base):
     __tablename__ = "email_verifications"
 

@@ -344,6 +344,54 @@ class JiraService:
             )
         return results
 
+    async def list_all_tickets(
+        self,
+        project: str = PROJECT_KEY,
+        start_at: int = 0,
+        max_results: int = 100,
+    ) -> Dict[str, Any]:
+        jql = f"project = {project} ORDER BY created ASC"
+        url = self._url("/rest/api/3/search/jql")
+        payload = {
+            "jql": jql,
+            "fields": [
+                "summary",
+                "description",
+                "status",
+                "assignee",
+                "priority",
+                "reporter",
+                "created",
+                "updated",
+            ],
+            "startAt": start_at,
+            "maxResults": max_results,
+        }
+        client = get_async_client()
+        try:
+            resp = await client.post(
+                url,
+                headers=self._headers(),
+                auth=self.auth,
+                json=payload,
+                timeout=30.0,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPStatusError:
+            logger.exception("Jira list_all_tickets failed: %s", resp.text)
+            raise RuntimeError("Failed to list Jira tickets")
+        except httpx.RequestError:
+            logger.exception("Jira list_all_tickets request error")
+            raise RuntimeError("Failed to list Jira tickets")
+
+        return {
+            "issues": data.get("issues", []),
+            "total": data.get("total", 0),
+            "startAt": data.get("startAt", start_at),
+            "maxResults": data.get("maxResults", max_results),
+        }
+
     async def add_comment(
         self,
         ticket_key: str,

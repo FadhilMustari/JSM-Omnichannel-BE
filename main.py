@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from fastapi import FastAPI, Request
@@ -29,6 +30,23 @@ app.include_router(stats_router)
 app.include_router(sync_router)
 
 http_logger = logging.getLogger("http.request")
+sync_task: asyncio.Task | None = None
+
+async def _run_periodic_sync() -> None:
+    while True:
+        await asyncio.sleep(60 * 60 * 24)
+        try:
+            db = SessionLocal()
+            sync_service = JiraSyncService(JiraService())
+            await sync_service.sync_jira_organizations_and_users(db)
+            await sync_service.sync_jira_tickets(db)
+        except Exception:
+            logging.getLogger(__name__).exception("JSM periodic sync failed")
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
 
 @app.middleware("http")
 async def trace_context_middleware(request: Request, call_next):
@@ -90,6 +108,7 @@ async def startup() -> None:
         db = SessionLocal()
         sync_service = JiraSyncService(JiraService())
         await sync_service.sync_jira_organizations_and_users(db)
+        await sync_service.sync_jira_tickets(db)
     except Exception:
         logging.getLogger(__name__).exception("JSM sync on startup failed")
     finally:
@@ -97,9 +116,15 @@ async def startup() -> None:
             db.close()
         except Exception:
             pass
+    global sync_task
+    sync_task = asyncio.create_task(_run_periodic_sync())
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    global sync_task
+    if sync_task:
+        sync_task.cancel()
+        sync_task = None
     await close_async_client()
 
 @app.get("/healthz")
