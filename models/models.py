@@ -19,13 +19,16 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, unique=True, nullable=False)
-    domain = Column(String, unique=True, nullable=False, index=True)
+    jsm_id = Column(String, unique=True, nullable=False, index=True)
+    jsm_uuid = Column(String, nullable=True)
+    name = Column(String, nullable=False)
+    is_active = Column(Boolean, nullable=False, server_default="true")
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.clock_timestamp(),
         nullable=False,
     )
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     users = relationship("User", back_populates="organization")
 
@@ -34,7 +37,7 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name = Column(String, nullable=False)
+    jsm_account_id = Column(String, unique=True, nullable=False, index=True)
     email = Column(String, unique=True, nullable=False, index=True)
     organization_id = Column(
         UUID(as_uuid=True),
@@ -42,15 +45,13 @@ class User(Base):
         nullable=False,
     )
     is_active = Column(Boolean, nullable=False, server_default="true")
+    is_authenticated = Column(Boolean, nullable=False, server_default="false")
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
-    updated_at = Column(
-        DateTime(timezone=True),
-        onupdate=func.now(),
-    )
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     organization = relationship("Organization", back_populates="users")
     channel_sessions = relationship("ChannelSession", back_populates="user")

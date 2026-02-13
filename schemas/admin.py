@@ -12,10 +12,13 @@ class AdminCommentCreate(BaseModel):
 
 
 class OrganizationCreate(BaseModel):
+    jsm_id: str
+    jsm_uuid: Optional[str] = None
     name: str
-    domain: str
+    is_active: Optional[bool] = True
 
 
 class OrganizationUpdate(BaseModel):
     name: Optional[str] = None
-    domain: Optional[str] = None
+    jsm_uuid: Optional[str] = None
+    is_active: Optional[bool] = None

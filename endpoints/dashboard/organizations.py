@@ -51,13 +51,15 @@ def list_organizations(
     for org in orgs:
         results.append(
             {
-                "organization_id": str(org.id),
-                "name": org.name,
-                "domain": org.domain,
-                "user_count": int(user_counts.get(org.id, 0)),
-                "conversation_count": int(convo_counts.get(org.id, 0)),
-                "ticket_count": int(ticket_counts.get(org.id, 0)),
-            }
+        "organization_id": str(org.id),
+        "jsm_id": org.jsm_id,
+        "jsm_uuid": org.jsm_uuid,
+        "name": org.name,
+        "is_active": org.is_active,
+        "user_count": int(user_counts.get(org.id, 0)),
+        "conversation_count": int(convo_counts.get(org.id, 0)),
+        "ticket_count": int(ticket_counts.get(org.id, 0)),
+    }
         )
     return results
 
@@ -74,7 +76,7 @@ def get_organization(
     users = (
         db.query(User)
         .filter(User.organization_id == organization_id)
-        .order_by(User.name)
+        .order_by(User.email)
         .all()
     )
     convo_count = (
@@ -92,9 +94,20 @@ def get_organization(
     )
     return {
         "organization_id": str(org.id),
+        "jsm_id": org.jsm_id,
+        "jsm_uuid": org.jsm_uuid,
         "name": org.name,
-        "domain": org.domain,
-        "users": [{"id": str(user.id), "name": user.name, "email": user.email} for user in users],
+        "is_active": org.is_active,
+        "users": [
+            {
+                "id": str(user.id),
+                "jsm_account_id": user.jsm_account_id,
+                "email": user.email,
+                "is_active": user.is_active,
+                "is_authenticated": user.is_authenticated,
+            }
+            for user in users
+        ],
         "stats": {"conversations": int(convo_count), "tickets": int(ticket_count)},
     }
 
@@ -104,10 +117,15 @@ def create_organization(
     body: OrganizationCreate,
     db: Session = Depends(get_db),
 ) -> dict:
-    if not body.domain:
-        raise HTTPException(status_code=400, detail="Domain is required")
+    if not body.jsm_id:
+        raise HTTPException(status_code=400, detail="jsm_id is required")
 
-    org = Organization(name=body.name, domain=body.domain)
+    org = Organization(
+        jsm_id=body.jsm_id,
+        jsm_uuid=body.jsm_uuid,
+        name=body.name,
+        is_active=body.is_active if body.is_active is not None else True,
+    )
     db.add(org)
 
     db.commit()
@@ -126,10 +144,10 @@ def update_organization(
 
     if body.name:
         org.name = body.name
-    if body.domain is not None:
-        if not body.domain:
-            raise HTTPException(status_code=400, detail="domain cannot be empty")
-        org.domain = body.domain
+    if body.jsm_uuid is not None:
+        org.jsm_uuid = body.jsm_uuid
+    if body.is_active is not None:
+        org.is_active = body.is_active
 
     db.add(org)
     db.commit()

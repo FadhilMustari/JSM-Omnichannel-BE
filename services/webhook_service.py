@@ -184,6 +184,13 @@ class WebhookService:
             db.add(session)
 
     def _sync_auth_state(self, db, session) -> None:
+        user = session.user
+        if not user or not user.is_authenticated:
+            if session.auth_status != "anonymous":
+                session.auth_status = "anonymous"
+                db.add(session)
+            return
+
         if session.user_id and session.auth_expires_at:
             expires_at = session.auth_expires_at
             if expires_at.tzinfo is None:
@@ -207,7 +214,8 @@ class WebhookService:
         return history
 
     def _require_authenticated(self, session) -> str | None:
-        if session.auth_status != "authenticated":
+        user = session.user
+        if not user or not user.is_authenticated:
             return "This action requires access to Jira. Please verify your company email to continue."
         return None
 
@@ -287,8 +295,8 @@ class WebhookService:
             "draft_ticket": session.draft_ticket,
             "user": {
                 "id": str(user.id),
-                "name": user.name,
                 "email": user.email,
+                "jsm_account_id": user.jsm_account_id,
             } if user else None,
         }
 
@@ -672,7 +680,7 @@ class WebhookService:
             await self.jira_service.add_comment(
                 ticket_key,
                 comment,
-                author={"name": user.name, "email": user.email},
+                author={"name": user.email, "email": user.email},
             )
         except RuntimeError:
             self.logger.exception(

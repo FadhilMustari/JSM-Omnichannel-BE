@@ -72,6 +72,84 @@ class JiraService:
             logger.exception("Failed to call Jira customer API")
             return False
 
+    async def list_organizations(self, limit: int = 50) -> List[Dict[str, Any]]:
+        url = self._url(
+            f"/rest/servicedeskapi/servicedesk/{self.service_desk_id}/organization"
+        )
+        headers = {"Accept": "application/json"}
+        start = 0
+        results: List[Dict[str, Any]] = []
+        client = get_async_client()
+
+        while True:
+            params = {"start": start, "limit": limit}
+            try:
+                resp = await client.get(
+                    url,
+                    headers=headers,
+                    auth=self.auth,
+                    params=params,
+                    timeout=15.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError:
+                logger.exception("Jira list_organizations failed: %s", resp.text)
+                raise RuntimeError("Failed to list Jira organizations")
+            except httpx.RequestError:
+                logger.exception("Jira list_organizations request error")
+                raise RuntimeError("Failed to list Jira organizations")
+
+            values = data.get("values", [])
+            results.extend(values)
+            if data.get("isLastPage") is True:
+                break
+            start = int(data.get("start", start)) + int(data.get("limit", limit))
+            if not values:
+                break
+
+        return results
+
+    async def list_organization_users(
+        self,
+        organization_id: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        url = self._url(f"/rest/servicedeskapi/organization/{organization_id}/user")
+        headers = {"Accept": "application/json"}
+        start = 0
+        results: List[Dict[str, Any]] = []
+        client = get_async_client()
+
+        while True:
+            params = {"start": start, "limit": limit}
+            try:
+                resp = await client.get(
+                    url,
+                    headers=headers,
+                    auth=self.auth,
+                    params=params,
+                    timeout=15.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPStatusError:
+                logger.exception("Jira list_organization_users failed: %s", resp.text)
+                raise RuntimeError("Failed to list Jira organization users")
+            except httpx.RequestError:
+                logger.exception("Jira list_organization_users request error")
+                raise RuntimeError("Failed to list Jira organization users")
+
+            values = data.get("values", [])
+            results.extend(values)
+            if data.get("isLastPage") is True:
+                break
+            start = int(data.get("start", start)) + int(data.get("limit", limit))
+            if not values:
+                break
+
+        return results
+
     async def create_ticket(
         self,
         summary: str,

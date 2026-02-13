@@ -96,7 +96,6 @@ def list_conversations(
         like = f"%{q}%"
         query = query.filter(
             or_(
-                User.name.ilike(like),
                 User.email.ilike(like),
                 ChannelSession.external_user_id.ilike(like),
                 last_message.c.text.ilike(like),
@@ -117,8 +116,9 @@ def list_conversations(
         results.append(
             {
                 "session_id": str(session.id),
-                "user_name": user.name if user else None,
+                "user_name": user.email if user else None,
                 "user_email": user.email if user else None,
+                "user_account_id": user.jsm_account_id if user else None,
                 "organization": (
                     {"id": str(org.id), "name": org.name} if org else None
                 ),
@@ -153,7 +153,15 @@ def get_conversation(
     return {
         "session_id": str(session.id),
         "user": (
-            {"id": str(user.id), "name": user.name, "email": user.email} if user else None
+            {
+                "id": str(user.id),
+                "jsm_account_id": user.jsm_account_id,
+                "email": user.email,
+                "is_active": user.is_active,
+                "is_authenticated": user.is_authenticated,
+            }
+            if user
+            else None
         ),
         "organization": {"id": str(org.id), "name": org.name} if org else None,
         "channel": session.platform,

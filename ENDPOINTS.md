@@ -189,7 +189,7 @@ This document summarizes the available endpoints and the expected request/respon
 **Body**
 
 ```json
-{ "name": "Tridorian", "domain": "tridorian.com" }
+{ "jsm_id": "12", "jsm_uuid": "b0f2...", "name": "Tridorian", "is_active": true }
 ```
 
 **Response**: created organization
@@ -200,11 +200,20 @@ This document summarizes the available endpoints and the expected request/respon
 **Body**
 
 ```json
-{ "name": "Tridorian Updated", "domain": "tridorian.com" }
+{ "name": "Tridorian Updated", "is_active": false }
 ```
 
 **Response**: updated organization
-**Purpose**: Update organization name/domain.
+**Purpose**: Update organization attributes.
+
+### `POST /api/sync/jsm`
+
+**Response**
+
+```json
+{ "status": "ok", "result": { "organizations_seen": 0, "organizations_active": 0, "users_active": 0 } }
+```
+**Purpose**: Trigger a manual sync of JSM organizations and users.
 
 ### `GET /api/stats`
 

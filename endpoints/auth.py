@@ -9,8 +9,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.get("/verify")
 def verify_email(token: str, auth_service: AuthService = Depends(get_auth_service), db: Session = Depends(get_db)):
-    session = auth_service.verify_token(db, token)
+    session, error = auth_service.verify_token(db, token)
 
+    if error in {"user_not_found", "user_inactive"}:
+        raise HTTPException(
+            status_code=401,
+            detail="User is not registered or inactive.",
+        )
     if not session:
         raise HTTPException(
             status_code=400,

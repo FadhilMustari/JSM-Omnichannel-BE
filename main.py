@@ -8,9 +8,13 @@ from endpoints.dashboard.conversations import router as conversations_router
 from endpoints.dashboard.tickets import router as tickets_router
 from endpoints.dashboard.organizations import router as organizations_router
 from endpoints.dashboard.stats import router as stats_router
+from endpoints.sync import router as sync_router
 from core.http_client import init_async_client, close_async_client
 from core.config import settings
 from core.logging import setup_logging, set_trace_context, clear_trace_context
+from core.database import SessionLocal
+from services.jira_service import JiraService
+from services.jira_sync_service import JiraSyncService
 
 load_dotenv()
 setup_logging(settings.log_level, settings.gcp_project_id)
@@ -22,6 +26,7 @@ app.include_router(conversations_router)
 app.include_router(tickets_router)
 app.include_router(organizations_router)
 app.include_router(stats_router)
+app.include_router(sync_router)
 
 http_logger = logging.getLogger("http.request")
 
@@ -81,6 +86,17 @@ async def trace_context_middleware(request: Request, call_next):
 async def startup() -> None:
     settings.validate_runtime()
     init_async_client()
+    try:
+        db = SessionLocal()
+        sync_service = JiraSyncService(JiraService())
+        await sync_service.sync_jira_organizations_and_users(db)
+    except Exception:
+        logging.getLogger(__name__).exception("JSM sync on startup failed")
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
 
 @app.on_event("shutdown")
 async def shutdown() -> None:

@@ -42,7 +42,6 @@ async def list_tickets(
             or_(
                 TicketLink.ticket_key.ilike(like),
                 User.email.ilike(like),
-                User.name.ilike(like),
             )
         )
 
@@ -68,7 +67,9 @@ async def list_tickets(
 
         summary = issue.get("summary")
         if q and summary and q.lower() not in summary.lower():
-            if link.ticket_key.lower().find(q.lower()) == -1 and (user and user.email and q.lower() not in user.email.lower()):
+            if link.ticket_key.lower().find(q.lower()) == -1 and (
+                user and user.email and q.lower() not in user.email.lower()
+            ):
                 continue
 
         results.append(
@@ -78,7 +79,7 @@ async def list_tickets(
                 "status": issue.get("status"),
                 "priority": issue.get("priority"),
                 "channel": link.platform,
-                "user": {"name": user.name, "email": user.email} if user else None,
+                "user": {"email": user.email, "jsm_account_id": user.jsm_account_id} if user else None,
                 "organization": (
                     {"id": str(org.id), "name": org.name} if org else None
                 ),
@@ -120,7 +121,7 @@ async def get_ticket(
         "jira_url": f"{settings.jira_base.rstrip('/')}/browse/{ticket_key}",
         "created_at": detail.get("created_at"),
         "updated_at": detail.get("updated_at"),
-        "user": {"name": user.name, "email": user.email} if user else None,
+        "user": {"email": user.email, "jsm_account_id": user.jsm_account_id} if user else None,
     }
 
 
