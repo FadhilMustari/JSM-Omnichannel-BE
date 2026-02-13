@@ -83,18 +83,6 @@ class WebhookService:
             db.commit()
             return
 
-        if self._is_confirm_message(message.text) and session.draft_ticket:
-            missing = self._missing_draft_fields(session.draft_ticket or {})
-            if missing:
-                reply_text = self._prompt_next_missing_field(session.draft_ticket or {})
-            else:
-                blocked = self._require_authenticated(session)
-                reply_text = blocked or await self._confirm_create_ticket(db, session)
-            self.message_service.save_system_message(db, session.id, reply_text)
-            await self._reply(db, session, message, reply_text)
-            db.commit()
-            return
-
         if self._is_list_tickets_message(message.text):
             blocked = self._require_authenticated(session)
             status_filter = self._extract_status_filter(message.text)
@@ -337,24 +325,6 @@ class WebhookService:
         if not settings.openai_api_key:
             return "AI is not configured. Please set OPENAI_API_KEY."
 
-        if self._is_confirm_message(message.text) and session.draft_ticket:
-            missing = self._missing_draft_fields(session.draft_ticket or {})
-            if not missing:
-                blocked = self._require_authenticated(session)
-                if blocked:
-                    return blocked
-                self.logger.info(
-                    "Confirm shortcut triggered session_id=%s",
-                    str(session.id),
-                )
-                return await self._confirm_create_ticket(db, session)
-            self.logger.info(
-                "Confirm received but draft missing fields session_id=%s missing=%s",
-                str(session.id),
-                ", ".join(missing),
-            )
-            return self._prompt_next_missing_field(session.draft_ticket or {})
-
         user = db.get(User, session.user_id) if session.user_id else None
         history = self._build_ai_history(db, session.id, exclude_message_id, limit=8)
         context = {
@@ -562,6 +532,12 @@ class WebhookService:
             blocked = self._require_authenticated(session)
             if blocked:
                 return blocked
+
+            draft = session.draft_ticket or {}
+            missing = self._missing_draft_fields(draft)
+            if missing:
+                return self._prompt_next_missing_field(draft)
+
             return await self._confirm_create_ticket(db, session)
 
         @function_tool
@@ -618,9 +594,6 @@ class WebhookService:
             )
 
         draft = session.draft_ticket or {}
-        missing_fields = self._missing_draft_fields(draft) if draft else []
-        is_confirm = self._is_confirm_message(message.text)
-
         tools = [
             start_email_verification,
             send_verification_reminder,
@@ -629,13 +602,12 @@ class WebhookService:
             get_jira_ticket_status,
             get_jira_comments,
             list_jira_tickets,
+            confirm_create_ticket,
         ]
         if self._is_reset_message(message.text):
             tools.insert(3, reset_ticket_draft)
         if not draft:
             tools.insert(2, start_ticket_flow)
-        if draft and not missing_fields and is_confirm:
-            tools.append(confirm_create_ticket)
 
         agent = Agent(
             name="Omnichannel Orchestrator",
@@ -1023,7 +995,29 @@ class WebhookService:
 
     def _missing_draft_fields(self, draft: dict) -> list[str]:
         ordered_fields = ["summary", "description", "priority", "start_date"]
-        return [field for field in ordered_fields if not draft.get(field)]
+        missing = []
+        summary = draft.get("summary")
+        if not isinstance(summary, str) or not summary.strip():
+            missing.append("summary")
+
+        description = draft.get("description")
+        if not isinstance(description, str) or not description.strip():
+            missing.append("description")
+
+        priority = draft.get("priority")
+        if priority not in {"P1", "P2", "P3", "P4"}:
+            missing.append("priority")
+
+        start_date = draft.get("start_date")
+        if not isinstance(start_date, str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", start_date):
+            missing.append("start_date")
+        else:
+            try:
+                datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                missing.append("start_date")
+
+        return [field for field in ordered_fields if field in missing]
 
     def _prompt_next_missing_field(self, draft: dict) -> str:
         missing = self._missing_draft_fields(draft)
