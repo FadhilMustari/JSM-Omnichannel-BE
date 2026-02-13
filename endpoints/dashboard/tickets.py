@@ -61,13 +61,19 @@ async def list_tickets(
         if status == "closed" and "done" not in issue_status:
             continue
 
+        customer_name = None
+        if user and user.email:
+            customer_name = user.email
+        elif ticket.reporter_name or ticket.reporter_email:
+            customer_name = ticket.reporter_name or ticket.reporter_email
+
         results.append(
             {
                 "ticket_key": ticket.ticket_key,
                 "summary": ticket.summary,
                 "status": ticket.status,
                 "priority": ticket.priority,
-                "channel": link.platform if link else None,
+                "channel": link.platform if link else "portal",
                 "user": {"email": user.email, "jsm_account_id": user.jsm_account_id} if user else None,
                 "organization": (
                     {"id": str(org.id), "name": org.name} if org else None
@@ -76,6 +82,15 @@ async def list_tickets(
                 "created_at": ticket.created_at,
                 "updated_at": ticket.updated_at,
                 "source": "platform" if link else "portal",
+                "customer_name": customer_name,
+                "reporter_name": ticket.reporter_name,
+                "reporter_email": ticket.reporter_email,
+                "jira_url": f"{settings.jira_base.rstrip('/')}/browse/{ticket.ticket_key}",
+                "action_url": (
+                    f"/tickets/{ticket.ticket_key}"
+                    if link
+                    else f"{settings.jira_base.rstrip('/')}/browse/{ticket.ticket_key}"
+                ),
             }
         )
     return results

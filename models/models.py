@@ -167,6 +167,7 @@ class JiraTicket(Base):
     status = Column(String, nullable=True)
     priority = Column(String, nullable=True)
     assignee = Column(String, nullable=True)
+    reporter_name = Column(String, nullable=True)
     reporter_email = Column(String, nullable=True)
     created_at = Column(String, nullable=True)
     updated_at = Column(String, nullable=True)
