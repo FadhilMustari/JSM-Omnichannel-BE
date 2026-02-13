@@ -3,7 +3,7 @@ import json
 import logging
 import html
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.orm import Session
 from agents import Agent, Runner, function_tool
@@ -132,10 +132,10 @@ class WebhookService:
         normalized = (text or "").strip().lower()
         if not normalized:
             return False
-        direct = {"reset", "start over", "startover", "batal"}
+        direct = {"reset", "start over", "startover", "batal", "cancel", "restart", "mulai ulang"}
         if normalized in direct:
             return True
-        return bool(re.search(r"\b(reset|start\s*over|batal)\b", normalized))
+        return bool(re.search(r"\b(reset|start\s*over|batal|cancel|restart|mulai\s*ulang)\b", normalized))
 
     def _is_list_tickets_message(self, text: str) -> bool:
         normalized = (text or "").strip().lower()
@@ -239,13 +239,82 @@ class WebhookService:
         if not value:
             return None
         normalized = value.strip()
+        if not normalized:
+            return None
+        lowered = normalized.lower()
+        if re.fullmatch(r"(today|hari ini)", lowered):
+            return datetime.now(timezone.utc).date().isoformat()
+        if re.fullmatch(r"(tomorrow|besok)", lowered):
+            return (datetime.now(timezone.utc).date() + timedelta(days=1)).isoformat()
+        if re.fullmatch(r"(yesterday|kemarin)", lowered):
+            return (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
         if re.match(r"^\d{4}-\d{2}-\d{2}$", normalized):
             return normalized
         match = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", normalized)
         if match:
             day, month, year = match.groups()
             return f"{year}-{month}-{day}"
-        return normalized
+
+        month_map = {
+            "jan": 1,
+            "january": 1,
+            "feb": 2,
+            "february": 2,
+            "mar": 3,
+            "march": 3,
+            "apr": 4,
+            "april": 4,
+            "may": 5,
+            "jun": 6,
+            "june": 6,
+            "jul": 7,
+            "july": 7,
+            "aug": 8,
+            "august": 8,
+            "sep": 9,
+            "sept": 9,
+            "september": 9,
+            "oct": 10,
+            "october": 10,
+            "nov": 11,
+            "november": 11,
+            "dec": 12,
+            "december": 12,
+        }
+
+        match = re.search(
+            r"\b(\d{1,2})(?:st|nd|rd|th)?\s+"
+            r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+            r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|"
+            r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b",
+            lowered,
+        )
+        if match:
+            day_text, month_text, year_text = match.groups()
+            month = month_map.get(month_text)
+            try:
+                parsed = datetime(int(year_text), int(month), int(day_text))
+                return parsed.date().isoformat()
+            except (TypeError, ValueError):
+                return None
+
+        match = re.search(
+            r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+            r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|"
+            r"oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+"
+            r"(\d{1,2})(?:st|nd|rd|th)?(?:,)?\s+(\d{4})\b",
+            lowered,
+        )
+        if match:
+            month_text, day_text, year_text = match.groups()
+            month = month_map.get(month_text)
+            try:
+                parsed = datetime(int(year_text), int(month), int(day_text))
+                return parsed.date().isoformat()
+            except (TypeError, ValueError):
+                return None
+
+        return None
 
     def _build_agent_input(self, context: dict, history: list[dict], user_message: str) -> str:
         history_lines = []
@@ -450,11 +519,14 @@ class WebhookService:
             blocked = self._require_authenticated(session)
             if blocked:
                 return blocked
+            coerced_start_date = self._coerce_start_date(start_date)
+            if start_date and not coerced_start_date:
+                return "I could not parse the start date. Please use YYYY-MM-DD."
             patch = {
                 "summary": summary,
                 "description": description,
                 "priority": self._normalize_priority(priority),
-                "start_date": self._coerce_start_date(start_date),
+                "start_date": coerced_start_date,
             }
             patch = {k: v for k, v in patch.items() if v}
             return self._start_ticket_flow(db, session, patch)
@@ -470,11 +542,14 @@ class WebhookService:
             blocked = self._require_authenticated(session)
             if blocked:
                 return blocked
+            coerced_start_date = self._coerce_start_date(start_date)
+            if start_date and not coerced_start_date:
+                return "I could not parse the start date. Please use YYYY-MM-DD."
             patch = {
                 "summary": summary,
                 "description": description,
                 "priority": self._normalize_priority(priority),
-                "start_date": self._coerce_start_date(start_date),
+                "start_date": coerced_start_date,
             }
             patch = {k: v for k, v in patch.items() if v}
             if not patch:
@@ -550,12 +625,13 @@ class WebhookService:
             start_email_verification,
             send_verification_reminder,
             update_ticket_draft,
-            reset_ticket_draft,
             add_jira_comment,
             get_jira_ticket_status,
             get_jira_comments,
             list_jira_tickets,
         ]
+        if self._is_reset_message(message.text):
+            tools.insert(3, reset_ticket_draft)
         if not draft:
             tools.insert(2, start_ticket_flow)
         if draft and not missing_fields and is_confirm:
