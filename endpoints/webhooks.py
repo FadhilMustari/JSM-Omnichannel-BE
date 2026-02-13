@@ -26,6 +26,55 @@ logger = logging.getLogger(__name__)
 _rate_limit_store: Dict[str, Deque[float]] = {}
 
 
+@router.post("/webhook/jira")
+async def jira_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    body = await request.body()
+    logger.info(
+        "Jira webhook received",
+        extra={
+            "body_len": len(body),
+            "has_secret_config": bool(settings.jira_webhook_secret),
+            "has_secret_header": bool(
+                request.headers.get("X-Atlassian-Webhook-Secret")
+                or request.headers.get("X-Jira-Webhook-Secret")
+            ),
+        },
+    )
+    _verify_jira_webhook(request)
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        body_preview = body.decode("utf-8", errors="replace")[:1000]
+        logger.warning(
+            "Jira webhook invalid JSON payload",
+            extra={"body_len": len(body), "body_preview": body_preview},
+        )
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    if payload.get("webhookEvent") != "comment_created":
+        logger.info(
+            "Jira webhook ignored event",
+            extra={"event": payload.get("webhookEvent")},
+        )
+        return Response(status_code=204)
+
+    issue = payload.get("issue") or {}
+    comment = payload.get("comment") or {}
+    logger.info(
+        "Jira webhook parsed",
+        extra={
+            "ticket_key": issue.get("key"),
+            "comment_id": comment.get("id"),
+        },
+    )
+
+    await _handle_comment_created(db, payload)
+    return {"status": "ok"}
+
+
 @router.post("/webhook/{platform}")
 async def webhook(
     platform: str,
@@ -80,55 +129,6 @@ async def webhook(
             },
         )
         raise
-    return {"status": "ok"}
-
-
-@router.post("/webhook/jira")
-async def jira_webhook(
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    body = await request.body()
-    logger.info(
-        "Jira webhook received",
-        extra={
-            "body_len": len(body),
-            "has_secret_config": bool(settings.jira_webhook_secret),
-            "has_secret_header": bool(
-                request.headers.get("X-Atlassian-Webhook-Secret")
-                or request.headers.get("X-Jira-Webhook-Secret")
-            ),
-        },
-    )
-    _verify_jira_webhook(request)
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        body_preview = body.decode("utf-8", errors="replace")[:1000]
-        logger.warning(
-            "Jira webhook invalid JSON payload",
-            extra={"body_len": len(body), "body_preview": body_preview},
-        )
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
-
-    if payload.get("webhookEvent") != "comment_created":
-        logger.info(
-            "Jira webhook ignored event",
-            extra={"event": payload.get("webhookEvent")},
-        )
-        return Response(status_code=204)
-
-    issue = payload.get("issue") or {}
-    comment = payload.get("comment") or {}
-    logger.info(
-        "Jira webhook parsed",
-        extra={
-            "ticket_key": issue.get("key"),
-            "comment_id": comment.get("id"),
-        },
-    )
-
-    await _handle_comment_created(db, payload)
     return {"status": "ok"}
 
 
